@@ -20,12 +20,16 @@ Usage:
 
 import os
 import torch
+import torch.multiprocessing
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateMonitor
 from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.strategies import DDPStrategy
 import hydra
 from omegaconf import DictConfig, OmegaConf
+
+# Fix "Too many open files" error on HPC systems
+torch.multiprocessing.set_sharing_strategy('file_system')
 
 from model.flow_matching_graph import FlowMatchingRobotGraph
 from dataset.CMapDataset import CMapDataset, custom_collate_fn
