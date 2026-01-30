@@ -41,8 +41,6 @@ model:
     t_embed_dim: 200
     V_object_dims: [3, 1, 64]
     V_robot_dims: [3, 3, 128]
-    E_or_dims: [3, 3]
-    E_rr_dims: [3, 3]
     v_conv_dim: 384
     num_heads: 16
     ffn_dim: 1536
@@ -60,7 +58,7 @@ model:
 
 test:
   embodiment: 'barrett'
-  ckpt: 'graph_exp/diff_v2/ckpt/epoch=139.ckpt'
-  save_dir: 'graph_exp/diff_v2/barrett-unconditioned-test'
+  ckpt: 'graph_exp/diff_v3/ckpt/epoch=139.ckpt'
+  save_dir: 'graph_exp/diff_v3/barrett-unconditioned-test'
   gpu: 0
   split_batch_size: 100
