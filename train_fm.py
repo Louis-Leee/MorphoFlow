@@ -50,6 +50,7 @@ class FlowMatchingGraspModule(pl.LightningModule):
     def training_step(self, batch, batch_idx):
         batch = self._prepare_input(batch)
         loss_dict = self.model(batch)
+        bs = batch["object_pc"].shape[0]  # actual batch size
         for k, v in loss_dict.items():
             self.log(
                 f"train/{k}",
@@ -58,6 +59,7 @@ class FlowMatchingGraspModule(pl.LightningModule):
                 on_epoch=True,
                 prog_bar=(k == "loss_total"),
                 sync_dist=True,
+                batch_size=bs,
             )
         return loss_dict["loss_total"]
 
