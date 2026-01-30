@@ -31,10 +31,14 @@ model:
     radius: 1.0
     n_dims: 3
   N_t_training: 10
-  flow_matching_config:
+  diffusion_config:
+    scheduling: linear
     M: 1000
-    ode_steps: 100     # increased from 50 to match diffusion DDIM steps
-    solver: 'euler'
+    beta_min: 0.0001
+    beta_max: 0.02
+    ddim_steps: 100
+    ddim_eta: 1.0
+    lambda: 0.2
   denoiser_config:
     t_embed_dim: 200
     V_object_dims: [3, 1, 64]
@@ -63,9 +67,9 @@ train:
   lr_step: 20
   lr_gamma: 0.8
   save_interval: 10
-  save_dir: 'graph_exp/fm_v2'
+  save_dir: 'graph_exp/diff_v2'
   project_name: 'trograsp-fm'
-  experiment_name: 'fm_v2'
+  experiment_name: 'diff_v2'
   resume_from: null
   pretrained_from: null
   gpus: 8

@@ -1,6 +1,6 @@
 dataset:
   robot_names:
-    - 'allegro'
+    - 'shadowhand'
   debug_object_names: null
   batch_size: 100
   num_workers: 16
@@ -55,8 +55,8 @@ model:
     rot_weight: 1.0
 
 test:
-  embodiment: 'allegro'
+  embodiment: 'shadowhand'
   ckpt: 'graph_exp/fm_v2/ckpt/epoch=299.ckpt'
-  save_dir: 'graph_exp/fm_v2/allegro-unconditioned-test'
+  save_dir: 'graph_exp/fm_v2/shadowhand-unconditioned-test'
   gpu: 0
   split_batch_size: 100
