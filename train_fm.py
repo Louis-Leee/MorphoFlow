@@ -138,6 +138,17 @@ class GraspDataModule(pl.LightningDataModule):
 
 @hydra.main(config_path="config", config_name="train_fm", version_base=None)
 def main(cfg: DictConfig):
+    # Print experiment configuration
+    print("\n" + "=" * 60)
+    print("🚀 FLOW MATCHING TRAINING")
+    print("=" * 60)
+    print(f"📋 Experiment: {cfg.train.experiment_name}")
+    print(f"🤖 Robot Names: {list(cfg.dataset.robot_names)}")
+    print(f"📦 Batch Size: {cfg.dataset.batch_size}")
+    print(f"🎯 GPUs: {cfg.train.get('gpus', 1)}")
+    print(f"💾 Save Dir: {cfg.train.save_dir}")
+    print("=" * 60 + "\n")
+
     # Seed
     pl.seed_everything(cfg.get("seed", 42), workers=True)
 

@@ -7,7 +7,7 @@ dataset:
     - 'shadowhand'
   debug_object_names: null
   batch_size: 16
-  num_workers: 4
+  num_workers: 8
   object_pc_type: 'random'  # 'fixed', 'random', 'partial'
 
 model:
