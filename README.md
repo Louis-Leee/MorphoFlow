@@ -114,16 +114,3 @@ Then, run the following script for validation:
 
 After evaluation, you will get a `res.txt` to record all evaluation metrics, and a `vis.pt` for visualization. We provide an example to visualize the grasp synthesis results in `./vis.py`.
 
-## Citation
-If you find our codes or models useful in your work, please cite:
-```
-@misc{fei2025trograspefficientgraph,
-      title={T(R,O) Grasp: Efficient Graph Diffusion of Robot-Object Spatial Transformation for Cross-Embodiment Dexterous Grasping}, 
-      author={Xin Fei and Zhixuan Xu and Huaicong Fang and Tianrui Zhang and Lin Shao},
-      year={2025},
-      eprint={2510.12724},
-      archivePrefix={arXiv},
-      primaryClass={cs.RO},
-      url={https://arxiv.org/abs/2510.12724}, 
-}
-```
