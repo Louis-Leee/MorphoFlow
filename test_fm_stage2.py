@@ -1,13 +1,13 @@
 """
-Flow Matching evaluation script.
+Stage 2 test: Object-conditioned grasp generation via two-stage flow matching.
 
-Mirrors test.py but uses FlowMatchingRobotGraph.
-Handles both Lightning checkpoint format and raw state_dict.
+Supports both standard evaluation (training embodiments) and zero-shot evaluation
+(embodiments seen in Stage 1 but not Stage 2).
 
 Usage:
-    python test_fm.py --config config/test_fm_unconditioned.yaml
-    # Use JAX on CPU to save GPU memory for IK:
-    JAX_PLATFORM_NAME=cpu python test_fm.py --config config/test_fm_unconditioned.yaml
+    python test_fm_stage2.py --config config/test_fm_stage2.yaml
+    python test_fm_stage2.py --config config/test_fm_stage2_zeroshot_leaphand.yaml
+    export JAX_PLATFORM_NAME=cpu  # reduce GPU memory for IK
 """
 
 import os
@@ -22,50 +22,45 @@ import jax.numpy as jnp
 from omegaconf import OmegaConf
 
 from dataset.CMapDataset import create_dataloader
-from model.flow_matching_graph import FlowMatchingRobotGraph
+from model.flow_matching_twostage import TwoStageFlowMatchingGraph
 from utils.hand_model import create_hand_model
 from utils.pyroki_ik import PyrokiRetarget
 from utils.optimization import process_transform
 from validation.validate_utils import validate_isaac
 
 
-def prepare_input(batch, device):
-    batch["object_pc"] = batch["object_pc"].to(device)
-    if "initial_q" in batch:
-        if isinstance(batch["initial_q"], list):
-            batch["initial_q"] = [x.to(device) for x in batch["initial_q"]]
-        else:
-            batch["initial_q"] = batch["initial_q"].to(device)
-    if "initial_se3" in batch:
-        if isinstance(batch["initial_se3"], list):
-            batch["initial_se3"] = [x.to(device) for x in batch["initial_se3"]]
-        else:
-            batch["initial_se3"] = batch["initial_se3"].to(device)
-    return batch
-
-
-def load_checkpoint(model, ckpt_path):
-    """Load checkpoint, handling both Lightning and raw formats."""
-    ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
+def load_stage2_checkpoint(model, ckpt_path):
+    """Load Stage 2 model weights from a Lightning checkpoint."""
+    print(f"Loading checkpoint: {ckpt_path}")
+    ckpt = torch.load(ckpt_path, map_location="cpu")
 
     if "state_dict" in ckpt:
-        # Lightning checkpoint: keys prefixed with "model."
-        state_dict = {
-            k.replace("model.", "", 1): v
-            for k, v in ckpt["state_dict"].items()
-            if k.startswith("model.")
-        }
+        state_dict = ckpt["state_dict"]
     elif "model_state" in ckpt:
         state_dict = ckpt["model_state"]
     else:
         state_dict = ckpt
 
-    missing, unexpected = model.load_state_dict(state_dict, strict=False)
+    # Remove Lightning module prefix
+    cleaned = {}
+    for k, v in state_dict.items():
+        if k.startswith("model.model."):
+            cleaned[k[len("model."):]] = v
+        elif k.startswith("model."):
+            cleaned[k[len("model."):]] = v
+        else:
+            cleaned[k] = v
+
+    missing, unexpected = model.load_state_dict(cleaned, strict=False)
+    print(f"  Loaded: {len(cleaned) - len(unexpected)} parameters")
     if missing:
-        print(f"Missing keys: {len(missing)}")
+        print(f"  Missing: {len(missing)}")
+        for m in missing[:5]:
+            print(f"    - {m}")
     if unexpected:
-        print(f"Unexpected keys: {len(unexpected)}")
-    return model
+        print(f"  Unexpected: {len(unexpected)}")
+        for u in unexpected[:5]:
+            print(f"    - {u}")
 
 
 def test(config):
@@ -73,21 +68,24 @@ def test(config):
 
     print("Building dataloader...")
     dataloader = create_dataloader(config.dataset, is_train=False)
-    print("Building model...")
-    model = FlowMatchingRobotGraph(**config.model).to(device)
 
-    load_checkpoint(model, config.test.ckpt)
+    print("Building model...")
+    model_cfg = OmegaConf.to_container(config.model, resolve=True)
+    model = TwoStageFlowMatchingGraph(**model_cfg).to(device)
+
+    load_stage2_checkpoint(model, config.test.ckpt)
 
     with open("data/data_urdf/robot/urdf_assets_meta.json", "r") as f:
         robot_urdf_meta = json.load(f)
 
-    # Compile JAX for Pyroki IK
+    #### Compile Jax for Pyroki ####
     robot_name = config.test.embodiment
     hand = create_hand_model(robot_name, device)
     urdf_path = robot_urdf_meta["urdf_path"][robot_name]
     target_links = list(hand.links_pc.keys())
     ik_solver = PyrokiRetarget(urdf_path, target_links)
     batch_retarget = jax.jit(ik_solver.solve_retarget)
+    ################################
 
     success_dict = {}
     diversity_dict = {}
@@ -98,34 +96,28 @@ def test(config):
     total_grasp_num = 0
     warmed_up = False
 
-    for batch_id, batch in tqdm.tqdm(enumerate(dataloader)):
+    print(f"\nTesting {robot_name} (Stage 2 flow matching)")
+    print(f"  Batch size: {batch_size}")
+    print(f"  Split batch: {config.test.split_batch_size}")
+    print(f"  ODE steps: {config.model.flow_matching_config.ode_steps}")
 
+    for batch_id, batch in tqdm.tqdm(enumerate(dataloader)):
         transform_dict = {}
         data_count = 0
         predict_q_list = []
         initial_q_list = []
-        initial_se3_list = []
         object_pc_list = []
 
         while data_count != batch_size:
             split_num = min(batch_size - data_count, config.test.split_batch_size)
-            initial_q = batch["initial_q"][data_count : data_count + split_num].to(
-                device
-            )
-            initial_se3 = batch["initial_se3"][data_count : data_count + split_num].to(
-                device
-            )
-            object_pc = batch["object_pc"][data_count : data_count + split_num].to(
-                device
-            )
-            robot_links_pc = batch["robot_links_pc"][
-                data_count : data_count + split_num
-            ]
+            initial_q = batch["initial_q"][data_count : data_count + split_num].to(device)
+            object_pc = batch["object_pc"][data_count : data_count + split_num].to(device)
+            robot_links_pc = batch["robot_links_pc"][data_count : data_count + split_num]
+
             split_batch = {
                 "robot_name": batch["robot_name"],
                 "object_name": batch["object_name"],
                 "initial_q": initial_q,
-                "initial_se3": initial_se3,
                 "object_pc": object_pc,
                 "robot_links_pc": robot_links_pc,
             }
@@ -135,7 +127,7 @@ def test(config):
             with torch.no_grad():
                 all_step_poses_dict = model.inference(split_batch)
 
-            # IK with Pyroki
+            ## IK process with pyroki
             clean_robot_pose = all_step_poses_dict[0]
             optim_transform = process_transform(hand.pk_chain, clean_robot_pose)
             initial_q_jnp = jnp.array(initial_q.cpu().numpy())
@@ -144,7 +136,8 @@ def test(config):
 
             target_pos_jnp = jnp.array(target_pos.detach().cpu().numpy())
             predict_q_jnp = batch_retarget(
-                initial_q=initial_q_jnp, target_pos=target_pos_jnp
+                initial_q=initial_q_jnp,
+                target_pos=target_pos_jnp,
             )
             jax.block_until_ready(predict_q_jnp)
             time_end = time.time()
@@ -159,15 +152,15 @@ def test(config):
                 device=device, dtype=initial_q.dtype
             )
             initial_q_list.append(initial_q)
-            initial_se3_list.append(initial_se3)
             predict_q_list.append(predict_q)
             object_pc_list.append(object_pc)
+
             for diffuse_step, pred_robot_pose in all_step_poses_dict.items():
                 if diffuse_step not in transform_dict:
                     transform_dict[diffuse_step] = []
                 transform_dict[diffuse_step].append(pred_robot_pose)
 
-        # Isaac simulation validation
+        # Simulation, isaac subprocess
         all_predict_q = torch.cat(predict_q_list, dim=0)
 
         success, isaac_q = validate_isaac(
@@ -187,25 +180,21 @@ def test(config):
             for transform in transform_list:
                 for k, v in transform.items():
                     transform_batch[k] = (
-                        v
-                        if k not in transform_batch
+                        v if k not in transform_batch
                         else torch.cat((transform_batch[k], v), dim=0)
                     )
             transform_dict[diffuse_step] = transform_batch
 
-        vis_info.append(
-            {
-                "robot_name": batch["robot_name"],
-                "object_name": batch["object_name"],
-                "initial_q": torch.cat(initial_q_list, dim=0),
-                "initial_se3": torch.cat(initial_se3_list, dim=0),
-                "predict_q": torch.cat(predict_q_list, dim=0),
-                "object_pc": torch.cat(object_pc_list, dim=0),
-                "predict_transform": transform_dict,
-                "success": success,
-                "isaac_q": isaac_q,
-            }
-        )
+        vis_info.append({
+            "robot_name": batch["robot_name"],
+            "object_name": batch["object_name"],
+            "initial_q": torch.cat(initial_q_list, dim=0),
+            "predict_q": torch.cat(predict_q_list, dim=0),
+            "object_pc": torch.cat(object_pc_list, dim=0),
+            "predict_transform": transform_dict,
+            "success": success,
+            "isaac_q": isaac_q,
+        })
 
     os.makedirs(config.test.save_dir, exist_ok=True)
     torch.save(vis_info, os.path.join(config.test.save_dir, "vis.pt"))
@@ -233,10 +222,10 @@ def test(config):
 
         if total_grasp_num > 0:
             line = f"Grasp generation time: {total_inference_time / total_grasp_num} s.\n"
-        else:
-            line = "Grasp generation time: N/A (no warmed-up batches).\n"
-        print(line, end="")
-        f.write(line)
+            print(line, end="")
+            f.write(line)
+
+    print(f"\nResults saved to {config.test.save_dir}")
 
 
 if __name__ == "__main__":
@@ -244,7 +233,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--config",
         type=str,
-        default="config/test_fm_unconditioned.yaml",
+        default="config/test_fm_stage2.yaml",
         help="config file",
     )
     args = parser.parse_args()

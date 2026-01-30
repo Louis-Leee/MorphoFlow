@@ -57,7 +57,7 @@ model:
 
 test:
   embodiment: 'allegro'
-  ckpt: 'graph_exp/fm_bal/ckpt/epoch=299.ckpt'
-  save_dir: 'graph_exp/fm_bal/allegro-unconditioned-test'
+  ckpt: 'graph_exp/fm_bas/ckpt/epoch=199.ckpt'
+  save_dir: 'graph_exp/fm_bas/allegro-unconditioned-test'
   gpu: 0
   split_batch_size: 100

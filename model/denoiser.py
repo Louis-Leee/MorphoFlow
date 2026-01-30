@@ -120,58 +120,65 @@ class GraphLayer(nn.Module):
         robot_node_f,
         or_edge_f,
         rr_edge_f,
-        t_embed  # [B, 200]
+        t_embed,  # [B, 200]
+        skip_or=False,
     ):
         B, L, P, F = or_edge_f.shape
-        
-        ## Binding
-        object_node_f = self.v_object_binding_fc(
-            torch.cat([object_node_f, t_embed[:, None, :].expand(-1, P, -1)], dim=-1)
-        )  # [B, P, N_o]
+
+        ## Binding (always bind robot + rr)
         robot_node_f = self.v_robot_binding_fc(
             torch.cat([robot_node_f, t_embed[:, None, :].expand(-1, L, -1)], dim=-1)
         )  # [B, L, N_r]
-        or_edge_f = self.e_or_binding_fc(
-            torch.cat([or_edge_f, t_embed[:, None, None, :].expand(-1, L, P, -1)], dim=-1)
-        )  # [B, L, P, E_or]
         rr_edge_f = self.e_rr_binding_fc(
             torch.cat([rr_edge_f, t_embed[:, None, None, :].expand(-1, L, L, -1)], dim=-1)
         )  # [B, L, L, E_rr]
 
-        ## OR attention
-        or_query = self.or_query_fc(robot_node_f)[:, :, None, :].expand(-1, -1, P, -1)  # [B, L, P, E_or]
-        or_key = self.or_key_fc(object_node_f)[:, None, :, :].expand(-1, L, -1, -1)  # [B, L, P, E_or]
+        if not skip_or:
+            ## OR binding + attention (only when objects are present)
+            object_node_f = self.v_object_binding_fc(
+                torch.cat([object_node_f, t_embed[:, None, :].expand(-1, P, -1)], dim=-1)
+            )  # [B, P, N_o]
+            or_edge_f = self.e_or_binding_fc(
+                torch.cat([or_edge_f, t_embed[:, None, None, :].expand(-1, L, P, -1)], dim=-1)
+            )  # [B, L, P, E_or]
 
-        or_attn = or_query * or_key  # [B, L, P, E_or]
-        or_attn = or_attn.reshape(B, L, P, -1, self.c_atten_head)
-        or_attn = or_attn.sum(-1, keepdim=True) / np.sqrt(self.c_atten_head * 3.0)
-        
-        or_attn = torch.softmax(or_attn, 2)
-        or_attn = or_attn.expand(-1, -1, -1, -1, self.c_atten_head).reshape(B, L, P, -1)  # [B, L, P, E_or]
+            ## OR attention
+            or_query = self.or_query_fc(robot_node_f)[:, :, None, :].expand(-1, -1, P, -1)  # [B, L, P, E_or]
+            or_key = self.or_key_fc(object_node_f)[:, None, :, :].expand(-1, L, -1, -1)  # [B, L, P, E_or]
 
-        or_edge_o = object_node_f[:, None, :, :].expand(-1, L, -1, -1)  # [B, L, P, N_o]
-        or_edge_r = robot_node_f[:, :, None, :].expand(-1, -1, P, -1)   # [B, L, P, N_r]
-        or_value = self.or_value_fc(
-            torch.cat([
-                or_edge_o, or_edge_r, or_edge_f
-            ], dim=-1)
-        )  # [B, L, P, E_or]
+            or_attn = or_query * or_key  # [B, L, P, E_or]
+            or_attn = or_attn.reshape(B, L, P, -1, self.c_atten_head)
+            or_attn = or_attn.sum(-1, keepdim=True) / np.sqrt(self.c_atten_head * 3.0)
 
-        agg_or = (or_attn * or_value).sum(2)  # [B, L, E_or]
-        self_or = self.or_r_self(robot_node_f)  # [B, L, E_or]
-        robot_node_f = agg_or + self_or
+            or_attn = torch.softmax(or_attn, 2)
+            or_attn = or_attn.expand(-1, -1, -1, -1, self.c_atten_head).reshape(B, L, P, -1)  # [B, L, P, E_or]
 
-        # global
-        robot_node_f_pooling = robot_node_f.max(1, keepdim=True).values.expand(-1, L, -1)  # [B, L, E_or]
-        robot_node_f = self.or_out(torch.cat([robot_node_f, robot_node_f_pooling], dim=-1))  # [B, L, N_r]
+            or_edge_o = object_node_f[:, None, :, :].expand(-1, L, -1, -1)  # [B, L, P, N_o]
+            or_edge_r = robot_node_f[:, :, None, :].expand(-1, -1, P, -1)   # [B, L, P, N_r]
+            or_value = self.or_value_fc(
+                torch.cat([
+                    or_edge_o, or_edge_r, or_edge_f
+                ], dim=-1)
+            )  # [B, L, P, E_or]
 
-        # update or edge
-        or_edge_f_pool_1 = or_edge_f.mean(1, keepdim=True).expand(-1, L, -1, -1)
-        or_edge_f_pool_2 = or_edge_f.mean(2, keepdim=True).expand(-1, -1, P, -1)
-        or_edge_f_pool = (or_edge_f_pool_1 + or_edge_f_pool_2) / 2.0   # [B, L, P, E_or]
-        or_value = self.or_edge_out(
-            torch.cat([or_value, or_edge_f_pool], dim=-1)
-        )
+            agg_or = (or_attn * or_value).sum(2)  # [B, L, E_or]
+            self_or = self.or_r_self(robot_node_f)  # [B, L, E_or]
+            robot_node_f = agg_or + self_or
+
+            # global
+            robot_node_f_pooling = robot_node_f.max(1, keepdim=True).values.expand(-1, L, -1)  # [B, L, E_or]
+            robot_node_f = self.or_out(torch.cat([robot_node_f, robot_node_f_pooling], dim=-1))  # [B, L, N_r]
+
+            # update or edge
+            or_edge_f_pool_1 = or_edge_f.mean(1, keepdim=True).expand(-1, L, -1, -1)
+            or_edge_f_pool_2 = or_edge_f.mean(2, keepdim=True).expand(-1, -1, P, -1)
+            or_edge_f_pool = (or_edge_f_pool_1 + or_edge_f_pool_2) / 2.0   # [B, L, P, E_or]
+            or_value = self.or_edge_out(
+                torch.cat([or_value, or_edge_f_pool], dim=-1)
+            )
+        else:
+            # skip_or: or_edge_f passes through unchanged
+            or_value = or_edge_f
 
         ## RR attention
         rr_query = self.rr_query_fc(robot_node_f)[:, :, None, :].expand(-1, -1, L, -1)  # [B, L, L, E_rr]
@@ -325,12 +332,14 @@ class GraphDenoiser(torch.nn.Module):
         return feat
 
     def forward(
-        self, 
-        V_O, 
+        self,
+        V_O,
         noisy_V_R,
         noisy_E_OR,
         noisy_E_RR,
         t,
+        skip_or=False,
+        return_features=False,
     ):
 
         # Position Embedding
@@ -369,7 +378,8 @@ class GraphDenoiser(torch.nn.Module):
                 robot_node_f,
                 or_edge_f,
                 rr_edge_f,
-                t_embed
+                t_embed,
+                skip_or=skip_or,
             )
             noisy_robot_node_f_list.append(robot_node_f)
             noisy_or_edge_f_list.append(or_edge_f)
@@ -397,6 +407,9 @@ class GraphDenoiser(torch.nn.Module):
         final_rr_edge = noisy_rr_edge_f_list[-1]
         dummy = 0.0 * (final_or_edge.sum() + final_rr_edge.sum())
         v_robot_pred = v_robot_pred + dummy
-        
+
+        if return_features:
+            return v_robot_pred, update_robot_node_f, object_node_f
+
         return v_robot_pred
         

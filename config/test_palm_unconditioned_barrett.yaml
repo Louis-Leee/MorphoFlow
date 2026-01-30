@@ -63,8 +63,8 @@ model:
 
 test:
   embodiment: "barrett"
-  ckpt: "graph_exp/tro_bal/ckpt/20.pth"
-  save_dir: "graph_exp/tro_bal/barrett-unconditioned-test"
+  ckpt: "graph_exp/fm_bas/ckpt/epoch=199.ckpt"
+  save_dir: "graph_exp/fm_bas/barrett-unconditioned-test"
   gpu: 2
   split_batch_size: 100    # sample per split
   
