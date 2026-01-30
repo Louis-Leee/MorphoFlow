@@ -1,13 +1,11 @@
 dataset:
   robot_names:
-    - 'allegro'
-    - 'barrett'
-    # - 'shadowhand'
     - 'leaphand'
+
   debug_object_names: null
 
-  batch_size: 16
-  num_workers: 8
+  batch_size: 100  # sample per object
+  num_workers: 16
   object_pc_type: 'random'  # 'fixed', 'random', 'partial'
 
 model:
@@ -24,8 +22,10 @@ model:
   robot_links:
     barrett: 10
     allegro: 21
-    # shadowhand: 17
+    shadowhand: 17
     leaphand: 17
+  inference_config:
+    inference_mode: 'unconditioned'  # unconditioned, palm_conditioned
   bps_config:
     bps_type: 'random_uniform'
     n_bps_points: 124
@@ -37,7 +37,7 @@ model:
     M: 1000
     beta_min: 0.0001
     beta_max: 0.02
-    ddim_steps: 100
+    ddim_steps: 20
     ddim_eta: 1.0
     lambda: 0.2
   denoiser_config:
@@ -53,24 +53,20 @@ model:
     v_out_hidden_dims: [256, 128]
     e_out_hidden_dims: [256, 128]
     se3_out_dim: [3, 3]
-  inference_config: False
   embodiment:
     - 'allegro'
     - 'barrett'
-    # - 'shadowhand'
+    - 'shadowhand'
     - 'leaphand'
-  mode: "train"
+  mode: "test"
   loss_config:
     trans_weight: 1.0
     rot_weight: 1.0
 
-train:
-  lr: 1e-4
-  epochs: 300
-  lr_step: 20
-  lr_gamma: 0.8
-  save_interval: 10
-  save_dir: 'graph_exp/tro_bal'
-  project_name: 'trograsp'
-  experiment_name: 'tro_bal'
-  resume_from: false
+test:
+  embodiment: "leaphand"
+  ckpt: "graph_exp/tro_bal/ckpt/20.pth"
+  save_dir: "graph_exp/tro_bal/leaphand-unconditioned-test"
+  gpu: 2
+  split_batch_size: 100    # sample per split
+  

@@ -203,8 +203,8 @@ class GraphLayer(nn.Module):
         # update rr edge
         rr_edge_f_pool_1 = rr_edge_f.mean(1, keepdim=True).expand(-1, L, -1, -1)
         rr_edge_f_pool_2 = rr_edge_f.mean(2, keepdim=True).expand(-1, -1, L, -1)
-        rr_edge_f_pool = (rr_edge_f_pool_1 + rr_edge_f_pool_2) / 2.0   # [B, L, P, E_rr]
-        rr_value = self.or_edge_out(
+        rr_edge_f_pool = (rr_edge_f_pool_1 + rr_edge_f_pool_2) / 2.0   # [B, L, L, E_rr]
+        rr_value = self.rr_edge_out(
             torch.cat([rr_value, rr_edge_f_pool], dim=-1)
         )
 
@@ -390,5 +390,13 @@ class GraphDenoiser(torch.nn.Module):
             )
             cur += f_dim
         v_robot_pred = torch.cat(v_robot_pred, dim=-1)
+        
+        # Include final layer edge outputs in computation graph for DDP compatibility
+        # (multiplied by 0 so they don't affect the actual output)
+        final_or_edge = noisy_or_edge_f_list[-1]
+        final_rr_edge = noisy_rr_edge_f_list[-1]
+        dummy = 0.0 * (final_or_edge.sum() + final_rr_edge.sum())
+        v_robot_pred = v_robot_pred + dummy
+        
         return v_robot_pred
         

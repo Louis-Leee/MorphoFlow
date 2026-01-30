@@ -45,7 +45,7 @@ class CMapDataset(Dataset):
             print("!!! Using debug objects !!!")
             self.object_names = debug_object_names
 
-        dataset_path = os.path.join(ROOT_DIR, f'data/CMapDataset_filtered/cmap_dataset.pt')
+        dataset_path = os.path.join(ROOT_DIR, f'data/CMapDataset_filtered/cmap_full_dataset.pt')
         metadata = torch.load(dataset_path)['metadata']
         self.metadata = [m for m in metadata if m[1] in self.object_names and m[2] in self.robot_names]
         if not self.is_train:
@@ -180,7 +180,6 @@ class CMapDataset(Dataset):
             object_pc_batch = torch.zeros([self.batch_size, self.num_points, 3], dtype=torch.float32)
             robot_links_pc_batch = []
             initial_se3_batch = []
-
             for batch_idx in range(self.batch_size):
                 initial_q = hand.get_initial_q()
                 _, all_link_se3_initial = hand.get_transformed_links_pc(initial_q)

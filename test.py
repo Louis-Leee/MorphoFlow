@@ -183,7 +183,7 @@ def test(config):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument("--config", type=str, required=True, help="config file")
+    parser.add_argument("--config", type=str, default="config/test_palm_unconditioned_ezgripper.yaml", help="config file")
     args = parser.parse_args()
     config = OmegaConf.load(args.config)
     test(config)

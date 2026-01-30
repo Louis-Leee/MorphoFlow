@@ -1,11 +1,11 @@
+seed: 42
+
 dataset:
   robot_names:
     - 'allegro'
     - 'barrett'
-    # - 'shadowhand'
-    - 'leaphand'
+    - 'shadowhand'
   debug_object_names: null
-
   batch_size: 16
   num_workers: 8
   object_pc_type: 'random'  # 'fixed', 'random', 'partial'
@@ -24,22 +24,17 @@ model:
   robot_links:
     barrett: 10
     allegro: 21
-    # shadowhand: 17
-    leaphand: 17
+    shadowhand: 17
   bps_config:
     bps_type: 'random_uniform'
     n_bps_points: 124
     radius: 1.0
     n_dims: 3
   N_t_training: 10
-  diffusion_config:
-    scheduling: linear
-    M: 1000
-    beta_min: 0.0001
-    beta_max: 0.02
-    ddim_steps: 100
-    ddim_eta: 1.0
-    lambda: 0.2
+  flow_matching_config:
+    M: 1000           # sinusoidal embedding table size (reuse denoiser architecture)
+    ode_steps: 50     # number of ODE integration steps at inference
+    solver: 'euler'   # 'euler' or 'midpoint'
   denoiser_config:
     t_embed_dim: 200
     V_object_dims: [3, 1, 64]
@@ -53,24 +48,27 @@ model:
     v_out_hidden_dims: [256, 128]
     e_out_hidden_dims: [256, 128]
     se3_out_dim: [3, 3]
-  inference_config: False
+  inference_config: false
   embodiment:
     - 'allegro'
     - 'barrett'
-    # - 'shadowhand'
-    - 'leaphand'
-  mode: "train"
+    - 'shadowhand'
+  mode: 'train'
   loss_config:
     trans_weight: 1.0
     rot_weight: 1.0
 
 train:
-  lr: 1e-4
+  lr: 1.0e-4
   epochs: 300
   lr_step: 20
   lr_gamma: 0.8
   save_interval: 10
-  save_dir: 'graph_exp/tro_bal'
-  project_name: 'trograsp'
-  experiment_name: 'tro_bal'
-  resume_from: false
+  save_dir: 'graph_exp/fm_bas'
+  project_name: 'trograsp-fm'
+  experiment_name: 'fm_bas'
+  resume_from: null        # path to Lightning checkpoint for resuming
+  pretrained_from: null    # path to diffusion checkpoint for weight transfer
+  gpus: 8                  # set >1 for DDP multi-GPU training
+  gradient_clip_val: 1.0
+  precision: 32

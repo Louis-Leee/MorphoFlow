@@ -2,7 +2,7 @@ import torch.nn as nn
 import numpy as np
 from model.vqvae.pn2 import PN2
 from model.vqvae.quantizer import VectorQuantizer
-from chamferdist import ChamferDistance
+# from chamferdist import ChamferDistance
 
 
 class VQVAE(nn.Module):
@@ -17,7 +17,7 @@ class VQVAE(nn.Module):
             cfg.embedding_dim,
             cfg.beta
         )
-        self.cd_loss = ChamferDistance()
+        # self.cd_loss = ChamferDistance()
 
 
     def forward(self, pcs, verbose=False):

@@ -1,7 +1,7 @@
 import torch.nn as nn
 import torch.nn.functional as F
 from model.vqvae.pn2_utils import PointNetSetAbstraction
-from chamferdist import ChamferDistance
+# from chamferdist import ChamferDistance
 
 
 class PN2(nn.Module):
@@ -23,7 +23,7 @@ class PN2(nn.Module):
         self.fc2 = nn.Linear(256, 512)
         self.fc3 = nn.Linear(512, self.local_decode_pts*3)
 
-        self.loss_func = ChamferDistance()
+        # self.loss_func = ChamferDistance()
 
 
     def forward(self, data_dict):

@@ -41,7 +41,7 @@ def train(config):
     wandb.init(
         project=config.train.project_name,
         config=OmegaConf.to_container(config, resolve=True),
-        name=datetime.now().strftime("%Y%m%d_%H%M%S"),
+        name=config.train.experiment_name,
     )
 
     print("Building dataloader...")
