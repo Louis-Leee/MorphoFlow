@@ -11,7 +11,7 @@ if [ ! -d ".git" ]; then
     echo "Initializing git repository..."
     git init
     git branch -M main
-    git remote add origin https://github.com/Louis-Leee/MorphoFlow.git
+    git remote add origin git@github.com:Louis-Leee/MorphoFlow.git
 fi
 
 # Get commit message

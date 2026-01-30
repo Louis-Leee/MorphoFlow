@@ -1,28 +1,3 @@
-# $\mathcal{T(R,O)}$ Grasp
-
-Official Code Repository for **$\mathcal{T(R,O)}$ Grasp: Efficient Graph Diffusion of Robot-Object Spatial Transformation for Cross-Embodiment Dexterous Grasping**.
-
-[Xin Fei](https://xinfei21.github.io/web/)<sup>1,2\*</sup>, [Zhixuan Xu](https://ariszxxu.github.io/)<sup>1,2\*</sup>, Huaicong Fang<sup>3</sup>, [Tianrui Zhang](https://ztr583.github.io/)<sup>1</sup>, [Lin Shao](https://linsats.github.io/)<sup>1,2</sup>
-
-<sup>1</sup>National University of Singapore, <sup>2</sup>RoboScience, <sup>3</sup>Zhejiang University
-
-<sup>*</sup> denotes equal contribution
-
-
-<p align="center">
-    <a href='https://arxiv.org/abs/2510.12724'>
-      <img src='https://img.shields.io/badge/Paper-arXiv-red?style=plastic&logo=arXiv&logoColor=red' alt='Paper arXiv'>
-    </a>
-    <a href='https://nus-lins-lab.github.io/trograspweb/'>
-      <img src='https://img.shields.io/badge/Project-Page-66C0FF?style=plastic&logo=Google%20chrome&logoColor=66C0FF' alt='Project Page'>
-    </a>
-</p>
-
-<div align="center">
-  <img src="assets/teaser.jpg" alt="main" width="95%">
-</div>
-
-In this paper, we introduce $\mathcal{T(R,O)}$ Grasp, a diffusion-based framework that efficiently generates accurate and diverse grasps across multiple robotic hands. We first define $\mathcal{T(R,O)}$ Graph to represent spatial transformations of robotic links and objects with auxiliary geometry information. Next, we introduce a graph diffusion model that enables both unconditioned and conditioned grasp synthesis.
 
 ## Installation
 
