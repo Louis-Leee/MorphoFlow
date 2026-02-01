@@ -40,6 +40,12 @@ class FlashAttentionDenoiserNoEdge(nn.Module):
         # Output
         v_out_hidden_dims: list = [256, 128],
         se3_out_dim: list = [3, 3],
+        # Compat (accepted but unused — allows sharing configs with edge-based denoisers)
+        E_or_dims: list = None,
+        E_rr_dims: list = None,
+        e_conv_dim: int = 384,
+        c_atten_head: int = 32,
+        e_out_hidden_dims: list = None,
     ):
         super().__init__()
 

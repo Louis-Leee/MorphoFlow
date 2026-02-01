@@ -1,12 +1,12 @@
+model_type: 'diff_v3'
+
 dataset:
   robot_names:
     - 'leaphand'
-
   debug_object_names: null
-
-  batch_size: 100  # sample per object
+  batch_size: 100
   num_workers: 16
-  object_pc_type: 'random'  # 'fixed', 'random', 'partial'
+  object_pc_type: 'random'
 
 model:
   vqvae_cfg:
@@ -23,9 +23,12 @@ model:
     barrett: 10
     allegro: 21
     shadowhand: 17
+    robotiq_3finger: 13
+    ezgripper: 5
     leaphand: 17
+    xhand: 13
   inference_config:
-    inference_mode: 'unconditioned'  # unconditioned, palm_conditioned
+    inference_mode: 'unconditioned'
   bps_config:
     bps_type: 'random_uniform'
     n_bps_points: 124
@@ -37,7 +40,7 @@ model:
     M: 1000
     beta_min: 0.0001
     beta_max: 0.02
-    ddim_steps: 20
+    ddim_steps: 100
     ddim_eta: 1.0
     lambda: 0.2
   denoiser_config:
@@ -47,26 +50,28 @@ model:
     E_or_dims: [3, 3]
     E_rr_dims: [3, 3]
     v_conv_dim: 384
-    e_conv_dim: 384
+    num_heads: 16
+    ffn_dim: 1536
     num_layers: 6
-    c_atten_head: 32
     v_out_hidden_dims: [256, 128]
-    e_out_hidden_dims: [256, 128]
     se3_out_dim: [3, 3]
   embodiment:
     - 'allegro'
     - 'barrett'
     - 'shadowhand'
     - 'leaphand'
-  mode: "test"
+    - 'xhand'
+    - 'robotiq_3finger'
+    - 'ezgripper'
+  mode: 'test'
   loss_config:
     trans_weight: 1.0
     rot_weight: 1.0
 
-test:
-  embodiment: "leaphand"
-  ckpt: "graph_exp/tro_l/ckpt/40.pth"
-  save_dir: "graph_exp/tro_l/leaphand-unconditioned-test"
-  gpu: 2
-  split_batch_size: 100    # sample per split
-  
+vis:
+  embodiment: 'leaphand'
+  ckpt: 'graph_exp/diff_v3_basrelx/ckpt/epoch=299.ckpt'
+  split_batch_size: 100
+  gpu: 0
+  port: 8080
+  save_path: null

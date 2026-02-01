@@ -1,7 +1,7 @@
 dataset:
   robot_names:
-    - 'allegro'
-    - 'barrett'
+    # - 'allegro'
+    # - 'barrett'
     # - 'shadowhand'
     - 'leaphand'
   debug_object_names: null
@@ -70,7 +70,7 @@ train:
   lr_step: 20
   lr_gamma: 0.8
   save_interval: 10
-  save_dir: 'graph_exp/tro_bal'
-  project_name: 'trograsp'
-  experiment_name: 'tro_bal'
+  save_dir: 'graph_exp/tro_l'
+  project_name: 'trograsp-fm'
+  experiment_name: 'tro_l'
   resume_from: false

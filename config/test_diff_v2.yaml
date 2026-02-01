@@ -1,6 +1,6 @@
 dataset:
   robot_names:
-    - 'barrett'
+    - 'shadowhand'
   debug_object_names: null
   batch_size: 100
   num_workers: 16
@@ -59,8 +59,8 @@ model:
     rot_weight: 1.0
 
 test:
-  embodiment: 'barrett'
-  ckpt: 'graph_exp/diff_v2/ckpt/epoch=139.ckpt'
-  save_dir: 'graph_exp/diff_v2/barrett-unconditioned-test'
+  embodiment: 'shadowhand'
+  ckpt: 'graph_exp/diff_v2/ckpt/epoch=299.ckpt'
+  save_dir: 'graph_exp/diff_v2/shadowhand-unconditioned-test'
   gpu: 0
   split_batch_size: 100

@@ -1,6 +1,6 @@
 dataset:
   robot_names:
-    - 'barrett'
+    - 'xhand'
   debug_object_names: null
   batch_size: 100
   num_workers: 16
@@ -21,6 +21,10 @@ model:
     barrett: 10
     allegro: 21
     shadowhand: 17
+    robotiq_3finger: 13
+    ezgripper: 5
+    leaphand: 17
+    xhand: 13
   inference_config:
     inference_mode: 'unconditioned'
   bps_config:
@@ -51,14 +55,18 @@ model:
     - 'allegro'
     - 'barrett'
     - 'shadowhand'
+    - 'robotiq_3finger'
+    - 'ezgripper'
+    - 'leaphand'
+    - 'xhand'
   mode: 'test'
   loss_config:
     trans_weight: 1.0
     rot_weight: 1.0
 
 test:
-  embodiment: 'barrett'
-  ckpt: 'graph_exp/diff_v3/ckpt/epoch=139.ckpt'
-  save_dir: 'graph_exp/diff_v3/barrett-unconditioned-test'
+  embodiment: 'xhand'
+  ckpt: 'graph_exp/diff_v3_basrelx/ckpt/epoch=299.ckpt'
+  save_dir: 'graph_exp/diff_v3_basrelx/xhand-unconditioned-test'
   gpu: 0
   split_batch_size: 100

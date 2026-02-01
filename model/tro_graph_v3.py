@@ -14,9 +14,9 @@ purely from absolute poses in node features.
 import math
 import torch
 import torch.nn as nn
-import numpy as np
 from omegaconf import OmegaConf
 from theseus.geometry.so3 import SO3
+from diffusers import DDIMScheduler
 
 from bps_torch.bps import bps_torch
 from model.vqvae.vq_vae import VQVAE
@@ -127,23 +127,19 @@ class RobotGraphV3(nn.Module):
     # ------------------------------------------------------------------
     def init_diffusion(self, cfg):
         self.M = cfg["M"]
-        self.scheduling = cfg["scheduling"]
-        if self.scheduling == "linear":
-            self.beta_min, self.beta_max = cfg["beta_min"], cfg["beta_max"]
-            betas = torch.linspace(self.beta_min, self.beta_max, self.M)
-        else:
-            raise NotImplementedError()
-        self.register_buffer("betas", betas)
-        self.register_buffer("alphas", 1.0 - betas)
-        self.register_buffer(
-            "alpha_bars",
-            torch.tensor(
-                [torch.prod(self.alphas[: i + 1]) for i in range(len(self.alphas))]
-            ),
-        )
         self.ddim_steps = cfg["ddim_steps"]
         self.eta = cfg["ddim_eta"]
         self.noise_lambda = cfg["lambda"]
+
+        self.noise_scheduler = DDIMScheduler(
+            num_train_timesteps=self.M,
+            beta_start=cfg["beta_min"],
+            beta_end=cfg["beta_max"],
+            beta_schedule=cfg["scheduling"],
+            prediction_type="epsilon",
+            timestep_spacing="trailing",
+            clip_sample=False,
+        )
 
     # ------------------------------------------------------------------
     # Helper methods (identical to tro_graph.py)
@@ -264,17 +260,16 @@ class RobotGraphV3(nn.Module):
         robot_nodes = torch.cat([link_target_poses, link_robot_embeds], dim=-1)
 
         # ---- Forward diffusion ----
-        t = np.random.randint(0, self.M, (B * self.N_t_training))
+        t = torch.randint(0, self.M, (B * self.N_t_training,), device=device)
         V_O = self._expand_and_reshape_(object_nodes, "V_O")
         V_R = self._expand_and_reshape_(robot_nodes, "V_R")
         V_R_trans, V_R_rot, V_R_embed = V_R[:, :, :3], V_R[:, :, 3:6], V_R[:, :, 6:]
 
         eta_V_R_trans = torch.randn_like(V_R_trans)
         eta_V_R_rot = torch.randn_like(V_R_rot)
-        a_bar = self.alpha_bars[t][:, None, None]
 
-        noisy_trans = a_bar.sqrt() * V_R_trans + (1 - a_bar).sqrt() * eta_V_R_trans
-        noisy_rot = a_bar.sqrt() * V_R_rot + (1 - a_bar).sqrt() * eta_V_R_rot
+        noisy_trans = self.noise_scheduler.add_noise(V_R_trans, eta_V_R_trans, t)
+        noisy_rot = self.noise_scheduler.add_noise(V_R_rot, eta_V_R_rot, t)
         noisy_V_R = torch.cat([noisy_trans, noisy_rot, V_R_embed], dim=-1)
 
         # ---- Predict noise (no edge computation) ----
@@ -309,7 +304,7 @@ class RobotGraphV3(nn.Module):
     # ------------------------------------------------------------------
     def get_start_timestamp(self, mu=1.596, eps=1e-8):
         target = torch.tensor(self.rotation_error / mu).clamp_min(eps) ** 2
-        idx = torch.argmin(torch.abs((1.0 - self.alpha_bars) - target)).item()
+        idx = torch.argmin(torch.abs((1.0 - self.noise_scheduler.alphas_cumprod) - target)).item()
         return int(idx)
 
     # ------------------------------------------------------------------
@@ -369,8 +364,8 @@ class RobotGraphV3(nn.Module):
         self, batch, object_nodes, centroids, scale,
         B, device, dtype, link_names, valid_links,
     ):
-        step = self.M // self.ddim_steps
-        ddim_t = torch.arange(self.M - 1, -1, -step, device=device, dtype=torch.long)
+        self.noise_scheduler.set_timesteps(self.ddim_steps, device=device)
+        ddim_t = self.noise_scheduler.timesteps
         all_diffuse_step_poses_dict = {}
 
         # Start from pure noise
@@ -403,11 +398,11 @@ class RobotGraphV3(nn.Module):
             pred_link_rot_noise = pred_link_pose_noise[:, :, 3:]
 
             # Predict x_0
-            a_bar_t = self.alpha_bars[diffuse_step]
+            a_bar_t = self.noise_scheduler.alphas_cumprod[diffuse_step]
             if i == len(ddim_t) - 1:
                 a_bar_prev = torch.tensor(1.0, device=device, dtype=dtype)
             else:
-                a_bar_prev = self.alpha_bars[ddim_t[i + 1]]
+                a_bar_prev = self.noise_scheduler.alphas_cumprod[ddim_t[i + 1]]
 
             x_t_trans = noisy_V_R_trans
             x_t_rot = noisy_V_R_rot
@@ -474,11 +469,11 @@ class RobotGraphV3(nn.Module):
         palm_r3 = batch["initial_se3"][:, palm_index][:, :3, :3]
         initial_pose = matrix_to_vector(batch["initial_se3"])
 
-        step = self.M // self.ddim_steps
-        ddim_t = torch.arange(self.M - 1, -1, -step, device=device, dtype=torch.long)
+        self.noise_scheduler.set_timesteps(self.ddim_steps, device=device)
+        ddim_t = self.noise_scheduler.timesteps
         start_idx = int(torch.argmin(torch.abs(ddim_t - self.t_star)).item())
         t_start = int(ddim_t[start_idx].item())
-        a_bar_s = self.alpha_bars[t_start]
+        a_bar_s = self.noise_scheduler.alphas_cumprod[t_start]
 
         # Initial links
         link_robot_rots = torch.zeros(
@@ -517,7 +512,7 @@ class RobotGraphV3(nn.Module):
             pred_link_rot_noise = pred_link_pose_noise[:, :, 3:]
 
             # Predict x_0
-            a_bar_t = self.alpha_bars[diffuse_step]
+            a_bar_t = self.noise_scheduler.alphas_cumprod[diffuse_step]
             x_t_trans = noisy_V_R_trans
             x_t_rot = noisy_V_R_rot
             x_0_trans = (
@@ -578,7 +573,7 @@ class RobotGraphV3(nn.Module):
             if i == len(ddim_t) - 1:
                 a_bar_prev = torch.tensor(1.0, device=device, dtype=dtype)
             else:
-                a_bar_prev = self.alpha_bars[ddim_t[i + 1]]
+                a_bar_prev = self.noise_scheduler.alphas_cumprod[ddim_t[i + 1]]
 
             sigma_t = self.eta * torch.sqrt(
                 ((1 - a_bar_prev) / (1 - a_bar_t)) * (1 - a_bar_t / a_bar_prev)
