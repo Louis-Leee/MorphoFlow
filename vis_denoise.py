@@ -43,6 +43,7 @@ MODEL_REGISTRY = {
     "diff_v2": ("model.tro_graph_v2", "RobotGraphV2"),
     "diff_v3": ("model.tro_graph_v3", "RobotGraphV3"),
     "fm_v2": ("model.flow_matching_v2", "FlowMatchingV2"),
+    "fm_v3": ("model.flow_matching_v3", "FlowMatchingV3"),
 }
 
 

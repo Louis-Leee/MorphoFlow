@@ -1,0 +1,70 @@
+seed: 42
+
+dataset:
+  robot_names:
+    - 'allegro'
+    - 'barrett'
+    - 'shadowhand'
+  debug_object_names: null
+  batch_size: 16
+  num_workers: 8
+  object_pc_type: 'random'
+
+model:
+  vqvae_cfg:
+    n_embeddings: 1024
+    embedding_dim: 16
+    num_point: 25
+    num_dim: 64
+    local_decode_pts: 40
+    beta: 0.25
+  vqvae_pretrain: 'ckpt/vqvae.ckpt'
+  object_patch: 25
+  max_link_node: 25
+  robot_links:
+    barrett: 10
+    allegro: 21
+    shadowhand: 17
+  bps_config:
+    bps_type: 'random_uniform'
+    n_bps_points: 124
+    radius: 1.0
+    n_dims: 3
+  N_t_training: 10
+  flow_matching_config:
+    M: 1000
+    ode_steps: 100
+  denoiser_config:
+    t_embed_dim: 200
+    V_object_dims: [3, 1, 64]
+    V_robot_dims: [3, 3, 128]
+    v_conv_dim: 384
+    num_heads: 16
+    ffn_dim: 1536
+    num_layers: 6
+    v_out_hidden_dims: [256, 128]
+    se3_out_dim: [3, 3]
+  inference_config: false
+  embodiment:
+    - 'allegro'
+    - 'barrett'
+    - 'shadowhand'
+  mode: 'train'
+  loss_config:
+    trans_weight: 1.0
+    rot_weight: 1.0
+
+train:
+  lr: 1.0e-4
+  epochs: 300
+  lr_step: 20
+  lr_gamma: 0.8
+  save_interval: 10
+  save_dir: 'graph_exp/fm_v3'
+  project_name: 'trograsp-fm'
+  experiment_name: 'fm_v3'
+  resume_from: null
+  pretrained_from: null
+  gpus: 8
+  gradient_clip_val: 1.0
+  precision: 32

@@ -1,0 +1,67 @@
+dataset:
+  robot_names:
+    - 'xhand'
+  debug_object_names: null
+  batch_size: 100
+  num_workers: 16
+  object_pc_type: 'random'
+
+model:
+  vqvae_cfg:
+    n_embeddings: 1024
+    embedding_dim: 16
+    num_point: 25
+    num_dim: 64
+    local_decode_pts: 40
+    beta: 0.25
+  vqvae_pretrain: 'ckpt/vqvae.ckpt'
+  object_patch: 25
+  max_link_node: 25
+  robot_links:
+    barrett: 10
+    allegro: 21
+    shadowhand: 17
+    robotiq_3finger: 13
+    ezgripper: 5
+    leaphand: 17
+    xhand: 13
+  inference_config:
+    inference_mode: 'unconditioned'
+  bps_config:
+    bps_type: 'random_uniform'
+    n_bps_points: 124
+    radius: 1.0
+    n_dims: 3
+  N_t_training: 10
+  flow_matching_config:
+    M: 1000
+    ode_steps: 100
+  denoiser_config:
+    t_embed_dim: 200
+    V_object_dims: [3, 1, 64]
+    V_robot_dims: [3, 3, 128]
+    v_conv_dim: 384
+    num_heads: 16
+    ffn_dim: 1536
+    num_layers: 6
+    v_out_hidden_dims: [256, 128]
+    se3_out_dim: [3, 3]
+  embodiment:
+    - 'allegro'
+    - 'barrett'
+    - 'shadowhand'
+    - 'robotiq_3finger'
+    - 'ezgripper'
+    - 'leaphand'
+    - 'xhand'
+  mode: 'test'
+  loss_config:
+    trans_weight: 1.0
+    rot_weight: 1.0
+
+test:
+  embodiment: 'xhand'
+  ckpt: 'graph_exp/fm_v3/ckpt/epoch=299.ckpt'
+  save_dir: 'graph_exp/fm_v3/xhand-unconditioned-test'
+  gpu: 0
+  split_batch_size: 100
