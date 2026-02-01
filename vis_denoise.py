@@ -10,6 +10,7 @@ Supports all model variants via model_type config field:
   - diff_v2:   RobotGraphV2 (diffusion + FlashAttention)
   - diff_v3:   RobotGraphV3 (diffusion + FlashAttention, no edge)
   - fm_v2:     FlowMatchingV2 (FM + FlashAttention)
+  - diff_v3_ce: RobotGraphV3CE (cross-embodiment, supports no_object mode)
 
 Usage:
     python vis_denoise.py --config config/vis_denoise.yaml
@@ -19,6 +20,7 @@ Usage:
 import os
 import sys
 import time
+import inspect
 import colorsys
 import argparse
 import importlib
@@ -44,6 +46,7 @@ MODEL_REGISTRY = {
     "diff_v3": ("model.tro_graph_v3", "RobotGraphV3"),
     "fm_v2": ("model.flow_matching_v2", "FlowMatchingV2"),
     "fm_v3": ("model.flow_matching_v3", "FlowMatchingV3"),
+    "diff_v3_ce": ("model.tro_graph_v3_ce", "RobotGraphV3CE"),
 }
 
 
@@ -84,6 +87,19 @@ def build_model(config, device):
     ModelClass = getattr(module, class_name)
 
     model_cfg = OmegaConf.to_container(config.model, resolve=True)
+
+    # Filter config to only include params accepted by this model class,
+    # so a single config can contain keys for multiple model types
+    # (e.g. both flow_matching_config and diffusion_config).
+    sig = inspect.signature(ModelClass.__init__)
+    valid_params = set(sig.parameters.keys()) - {"self"}
+    has_var_keyword = any(
+        p.kind == inspect.Parameter.VAR_KEYWORD
+        for p in sig.parameters.values()
+    )
+    if not has_var_keyword:
+        model_cfg = {k: v for k, v in model_cfg.items() if k in valid_params}
+
     model = ModelClass(**model_cfg).to(device)
     load_checkpoint(model, config.vis.ckpt)
     model.eval()
@@ -91,15 +107,65 @@ def build_model(config, device):
     return model
 
 
+def _generate_no_object_batches(config):
+    """Generate batches for no-object inference (no CMapDataset needed).
+
+    Returns a list of batch dicts with dummy object_pc (zeros).
+    The model's _inference_no_object() will skip VQ-VAE encoding.
+    """
+    robot_name = config.vis.embodiment
+    hand = create_hand_model(robot_name, device=torch.device("cpu"))
+    batch_size = config.dataset.batch_size
+
+    initial_q_list = []
+    initial_se3_list = []
+    robot_links_pc_list = []
+    for _ in range(batch_size):
+        q = hand.get_initial_q()
+        _, se3 = hand.get_transformed_links_pc(q)
+        initial_q_list.append(q)
+        initial_se3_list.append(se3)
+        robot_links_pc_list.append(hand.links_pc)
+
+    batch = {
+        "robot_name": robot_name,
+        "object_name": "none",
+        "initial_q": torch.stack(initial_q_list),
+        "initial_se3": torch.stack(initial_se3_list),
+        "object_pc": torch.zeros(batch_size, 512, 3),
+        "robot_links_pc": robot_links_pc_list,
+    }
+    return [batch]
+
+
+def _get_batch_grasp_count(info):
+    """Get grasp count from vis_data entry, handling both object/no-object."""
+    if info.get("object_pc") is not None:
+        return info["object_pc"].shape[0]
+    # No object: get B from transform_dict
+    sample_step = next(iter(info["transform_dict"]))
+    sample_link = next(iter(info["transform_dict"][sample_step]))
+    return info["transform_dict"][sample_step][sample_link].shape[0]
+
+
 def run_inference(config, model, device):
     """Run inference on all test batches, collect per-step transforms."""
-    dataloader = create_dataloader(config.dataset, is_train=False)
+    inference_mode = OmegaConf.select(
+        config, "model.inference_config.inference_mode", default="unconditioned"
+    )
+    no_object = inference_mode == "no_object"
+
+    if no_object:
+        batches = _generate_no_object_batches(config)
+    else:
+        batches = create_dataloader(config.dataset, is_train=False)
+
     batch_size = config.dataset.batch_size
     split_batch_size = config.vis.split_batch_size
 
     vis_data = []
 
-    for batch_id, batch in tqdm.tqdm(enumerate(dataloader), desc="Inference"):
+    for batch_id, batch in tqdm.tqdm(enumerate(batches), desc="Inference"):
         transform_dict = {}
         data_count = 0
         object_pc_list = []
@@ -138,7 +204,8 @@ def run_inference(config, model, device):
                     transform_dict[step] = []
                 transform_dict[step].append(pred_robot_pose)
 
-            object_pc_list.append(object_pc.cpu())
+            if not no_object:
+                object_pc_list.append(object_pc.cpu())
 
         # Concatenate splits for each step
         for step, transform_list in transform_dict.items():
@@ -156,7 +223,7 @@ def run_inference(config, model, device):
             {
                 "robot_name": batch["robot_name"],
                 "object_name": batch["object_name"],
-                "object_pc": torch.cat(object_pc_list, dim=0),
+                "object_pc": torch.cat(object_pc_list, dim=0) if object_pc_list else None,
                 "transform_dict": transform_dict,
             }
         )
@@ -186,7 +253,7 @@ def launch_viewer(vis_data, config):
     total_grasps = 0
     for info in vis_data:
         grasp_offsets.append(total_grasps)
-        total_grasps += info["object_pc"].shape[0]
+        total_grasps += _get_batch_grasp_count(info)
 
     # Get sorted denoising steps (noise → clean)
     sample_steps = sorted(vis_data[0]["transform_dict"].keys(), reverse=True)
@@ -234,7 +301,7 @@ def launch_viewer(vis_data, config):
         info = None
         local_idx = grasp_idx
         for i, data in enumerate(vis_data):
-            n = data["object_pc"].shape[0]
+            n = _get_batch_grasp_count(data)
             if local_idx < n:
                 info = data
                 break
@@ -246,25 +313,35 @@ def launch_viewer(vis_data, config):
         robot_name = info["robot_name"]
         object_name = info["object_name"]
         step_key = sample_steps[step_idx]
+        has_object = info.get("object_pc") is not None
 
         print(f"{robot_name} | {object_name} | sample {local_idx} | step {step_key}")
 
         # ---- Object mesh ----
-        obj_parts = object_name.split("+")
-        obj_path = os.path.join(
-            ROOT_DIR,
-            f"data/data_urdf/object/{obj_parts[0]}/{obj_parts[1]}/{obj_parts[1]}.stl",
-        )
-        if os.path.exists(obj_path) and show_mesh_cb.value:
-            obj_mesh = trimesh.load_mesh(obj_path)
-            server.scene.add_mesh_simple(
-                "object/mesh",
-                obj_mesh.vertices,
-                obj_mesh.faces,
-                color=(239, 132, 167),
-                opacity=0.6,
+        if has_object:
+            obj_parts = object_name.split("+")
+            obj_path = os.path.join(
+                ROOT_DIR,
+                f"data/data_urdf/object/{obj_parts[0]}/{obj_parts[1]}/{obj_parts[1]}.stl",
             )
+            if os.path.exists(obj_path) and show_mesh_cb.value:
+                obj_mesh = trimesh.load_mesh(obj_path)
+                server.scene.add_mesh_simple(
+                    "object/mesh",
+                    obj_mesh.vertices,
+                    obj_mesh.faces,
+                    color=(239, 132, 167),
+                    opacity=0.6,
+                )
+            else:
+                server.scene.add_mesh_simple(
+                    "object/mesh",
+                    np.zeros((3, 3), dtype=np.float32),
+                    np.zeros((1, 3), dtype=np.int32),
+                    visible=False,
+                )
         else:
+            # No object: clear mesh and PC placeholders
             server.scene.add_mesh_simple(
                 "object/mesh",
                 np.zeros((3, 3), dtype=np.float32),
@@ -273,15 +350,25 @@ def launch_viewer(vis_data, config):
             )
 
         # ---- Object point cloud ----
-        obj_pc = info["object_pc"][local_idx].numpy()
-        server.scene.add_point_cloud(
-            "object/pc",
-            obj_pc,
-            point_size=0.002,
-            point_shape="circle",
-            colors=(239, 132, 167),
-            visible=show_pc_cb.value,
-        )
+        if has_object:
+            obj_pc = info["object_pc"][local_idx].numpy()
+            server.scene.add_point_cloud(
+                "object/pc",
+                obj_pc,
+                point_size=0.002,
+                point_shape="circle",
+                colors=(239, 132, 167),
+                visible=show_pc_cb.value,
+            )
+        else:
+            server.scene.add_point_cloud(
+                "object/pc",
+                np.zeros((1, 3), dtype=np.float32),
+                point_size=0.001,
+                point_shape="circle",
+                colors=(0, 0, 0),
+                visible=False,
+            )
 
         # ---- Robot per-link point clouds ----
         hand = get_hand(robot_name)
@@ -359,7 +446,7 @@ def main():
             print(f"Saved vis_data to {save_path}")
 
     print(f"Total objects: {len(vis_data)}")
-    total = sum(d['object_pc'].shape[0] for d in vis_data)
+    total = sum(_get_batch_grasp_count(d) for d in vis_data)
     print(f"Total grasps: {total}")
     steps = sorted(vis_data[0]["transform_dict"].keys())
     print(f"Denoising steps: {len(steps)} ({max(steps)} -> {min(steps)})")

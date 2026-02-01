@@ -1,6 +1,6 @@
 dataset:
   robot_names:
-    - 'shadowhand'
+    - 'leaphand'
   debug_object_names: null
   batch_size: 100
   num_workers: 16
@@ -21,10 +21,7 @@ model:
     barrett: 10
     allegro: 21
     shadowhand: 17
-    robotiq_3finger: 13
-    ezgripper: 5
     leaphand: 17
-    xhand: 13
   inference_config:
     inference_mode: 'unconditioned'
   bps_config:
@@ -55,18 +52,21 @@ model:
     - 'allegro'
     - 'barrett'
     - 'shadowhand'
-    - 'robotiq_3finger'
-    - 'ezgripper'
     - 'leaphand'
-    - 'xhand'
   mode: 'test'
   loss_config:
     trans_weight: 1.0
     rot_weight: 1.0
+  ce_config:
+    p_uncond: 0.1
+    no_gt_robot_names:
+      - 'leaphand'
+    guidance_scale: 1.5
+    no_gt_loss_weight: 1.0
 
 test:
-  embodiment: 'shadowhand'
-  ckpt: 'graph_exp/diff_v3_basrelx_ddim/ckpt/epoch=299.ckpt'
-  save_dir: 'graph_exp/diff_v3_basrelx_ddim/shadowhand-unconditioned-test'
+  embodiment: 'leaphand'
+  ckpt: 'graph_exp/diff_v3_ce/ckpt/epoch=299.ckpt'
+  save_dir: 'graph_exp/diff_v3_ce/leaphand-unconditioned-test'
   gpu: 0
   split_batch_size: 100
