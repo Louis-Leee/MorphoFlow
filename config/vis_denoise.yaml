@@ -1,8 +1,8 @@
-model_type: 'diff_v3'
+model_type: 'fm'
 
 dataset:
   robot_names:
-    - 'leaphand'
+    - 'allegro'
   debug_object_names: null
   batch_size: 100
   num_workers: 16
@@ -35,14 +35,9 @@ model:
     radius: 1.0
     n_dims: 3
   N_t_training: 10
-  diffusion_config:
-    scheduling: linear
+  flow_matching_config:
     M: 1000
-    beta_min: 0.0001
-    beta_max: 0.02
-    ddim_steps: 100
-    ddim_eta: 1.0
-    lambda: 0.2
+    ode_steps: 100
   denoiser_config:
     t_embed_dim: 200
     V_object_dims: [3, 1, 64]
@@ -50,10 +45,11 @@ model:
     E_or_dims: [3, 3]
     E_rr_dims: [3, 3]
     v_conv_dim: 384
-    num_heads: 16
-    ffn_dim: 1536
+    e_conv_dim: 384
     num_layers: 6
+    c_atten_head: 32
     v_out_hidden_dims: [256, 128]
+    e_out_hidden_dims: [256, 128]
     se3_out_dim: [3, 3]
   embodiment:
     - 'allegro'
@@ -69,8 +65,8 @@ model:
     rot_weight: 1.0
 
 vis:
-  embodiment: 'leaphand'
-  ckpt: 'graph_exp/diff_v3_basrelx/ckpt/epoch=299.ckpt'
+  embodiment: 'allegro'
+  ckpt: 'graph_exp/fm_bas/ckpt/epoch=199.ckpt'
   split_batch_size: 100
   gpu: 0
   port: 8080
