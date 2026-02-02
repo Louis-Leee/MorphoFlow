@@ -17,7 +17,7 @@ sys.path.append(ROOT_DIR)
 
 def main():
     # .pt file path for visualization
-    file_name = 'graph_exp/TRO-v2.4-noise-on-se3-multi-hand-bps-new/allegro/allegro_test_ddim-20/vis.pt'
+    file_name = 'graph_exp/tro_l/leaphand-unconditioned-test/vis.pt'
     vis_info = torch.load(file_name)
 
     def on_update(idx):
@@ -70,7 +70,7 @@ def main():
             visible=False
         )
 
-        robot_trimesh = hand.get_trimesh_q(info['isaac_q'][idx])['visual']
+        robot_trimesh = hand.get_trimesh_q(info['predict_q'][idx])['visual']
         server.scene.add_mesh_simple(
             'robot_isaac',
             robot_trimesh.vertices,

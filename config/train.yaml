@@ -70,7 +70,7 @@ train:
   lr_step: 20
   lr_gamma: 0.8
   save_interval: 10
-  save_dir: 'graph_exp/tro_l'
+  save_dir: 'graph_exp/tro_e'
   project_name: 'trograsp-fm'
-  experiment_name: 'tro_l'
+  experiment_name: 'tro_e'
   resume_from: false

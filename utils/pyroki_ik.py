@@ -98,19 +98,65 @@ class PyrokiRetarget:
     def __init__(
             self,
             urdf_path: str,
-            target_link_name: list[str]
+            target_link_name: list[str],
+            hand_joint_names: list[str] | None = None,
         ):
         urdf = yourdfpy.URDF.load(urdf_path)
         self.robot = pk.Robot.from_urdf(urdf)
         self.target_link_index = jnp.array([
             self.robot.links.names.index(name) for name in target_link_name
         ])
+
+        # Mimic joint mapping for robots where HandModel DOF != pyroki actuated DOF
+        # (e.g. ezgripper: 10 HandModel DOF vs 8 pyroki actuated DOF)
+        self._hand_to_pyroki = None
+        self._pyroki_to_hand = None
+
+        if hand_joint_names is not None:
+            n_actuated = self.robot.joints.num_actuated_joints
+            n_hand = len(hand_joint_names)
+
+            if n_hand != n_actuated:
+                # Parse mimic and fixed joints from URDF
+                mimic_map = {}  # mimic_joint_name -> source_joint_name
+                fixed_joints = set()
+                for jname, joint in urdf.joint_map.items():
+                    if joint.mimic is not None:
+                        mimic_map[jname] = joint.mimic.joint
+                    if joint.type == 'fixed':
+                        fixed_joints.add(jname)
+
+                # Get pyroki's actuated joint names in its internal (topological) order
+                pyroki_actuated_names = [
+                    n for n in self.robot.joints.names
+                    if n not in fixed_joints and n not in mimic_map
+                ]
+
+                # hand→pyroki: for each pyroki actuated slot, which hand index to read from
+                self._hand_to_pyroki = jnp.array([
+                    hand_joint_names.index(n) for n in pyroki_actuated_names
+                ])
+
+                # pyroki→hand: for each hand joint, which pyroki actuated index to read from
+                pyroki_to_hand = []
+                for h_name in hand_joint_names:
+                    if h_name in mimic_map:
+                        source = mimic_map[h_name]
+                        pyroki_to_hand.append(pyroki_actuated_names.index(source))
+                    else:
+                        pyroki_to_hand.append(pyroki_actuated_names.index(h_name))
+                self._pyroki_to_hand = jnp.array(pyroki_to_hand)
         
     def solve_retarget(
         self,
-        initial_q: jax.Array, 
+        initial_q: jax.Array,
         target_pos: jax.Array
     ):
+        # Map hand DOF → pyroki actuated DOF (drop mimic joints)
+        if self._hand_to_pyroki is not None:
+            initial_q_actuated = initial_q[:, self._hand_to_pyroki]
+        else:
+            initial_q_actuated = initial_q
 
         joint_var = self.robot.joint_var_cls(0)
 
@@ -118,7 +164,7 @@ class PyrokiRetarget:
             init_q: jax.Array,
             target_link_pos: jax.Array,
         )-> jax.Array:
-            
+
             """analytical jacobion"""
             @jaxls.Cost.create_factory(jac_custom_with_cache_fn=_pos_cost_jac_multi)
             def pos_cost_analytical_jac_multi(
@@ -150,13 +196,13 @@ class PyrokiRetarget:
                     10 * flattened_pos_error,
                     (Ts_world_joint, Ts_world_link, pos_error), # Cache for Jacobian
                 )
-                        
+
             factors = [
                 pos_cost_analytical_jac_multi(
                     self.robot,
                     joint_var,
-                    self.target_link_index, 
-                    target_link_pos   
+                    self.target_link_index,
+                    target_link_pos
                 ),
                 pk.costs.limit_cost(self.robot, joint_var, weight=10.0),
             ]
@@ -173,8 +219,14 @@ class PyrokiRetarget:
             )
 
             return sol[joint_var]
-        
-        return jax.vmap(solve_single)(initial_q, target_pos)
+
+        result = jax.vmap(solve_single)(initial_q_actuated, target_pos)
+
+        # Map pyroki actuated DOF → hand DOF (expand mimic joints back)
+        if self._pyroki_to_hand is not None:
+            result = result[:, self._pyroki_to_hand]
+
+        return result
 
 def main():
 

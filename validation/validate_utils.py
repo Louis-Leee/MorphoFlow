@@ -79,8 +79,8 @@ def validate_isaac(robot_name, object_name, q_batch, gpu: int = 0):
     batch_size = q_batch.shape[0]
 
     env = os.environ.copy()
-    env["LD_LIBRARY_PATH"] = f"/home/fx/.conda/envs/isaac/lib:" + env.get("LD_LIBRARY_PATH", "")
-    env["CUDA_VISIBLE_DEVICES"] = "3"
+    env["LD_LIBRARY_PATH"] = f"/opt/dlami/nvme/miniconda3/envs/isaac/lib:" + env.get("LD_LIBRARY_PATH", "")
+    env["CUDA_VISIBLE_DEVICES"] = str(gpu)
     args = [
         "conda", "run", "-n", "isaac",
         "python", os.path.join(ROOT_DIR, 'validation/isaac_main.py'),

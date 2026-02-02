@@ -5,12 +5,14 @@ Based on tro_graph_v3.py (RobotGraphV3) with additions for cross-embodiment
 training and classifier-free guidance (CFG):
 
 1. Mixed GT/no-GT forward pass via has_gt flag
-2. CFG dropout (p_uncond) during GT training — randomly zero out object nodes
-3. Hand-centric normalization for no-GT batches (no object reference)
+2. CFG dropout (p_uncond) during both GT and no-GT training
+3. Object-centric normalization for all batches (real object centroid/scale)
 4. CFG-guided inference: two denoiser passes per DDIM step
+5. no_object inference reuses _inference_unconditioned with V_O=zeros
 
 GT robots (allegro, barrett, shadowhand): full object-conditioned training
-No-GT robots (leaphand): self-reconstruction of valid FK poses (skip_or=True)
+No-GT robots (leaphand): real grasp data with object-centric normalization,
+  V_O=zeros, and CFG dropout (skip_or toggled by p_uncond)
 """
 
 import math
@@ -458,15 +460,24 @@ class RobotGraphV3CE(nn.Module):
         link_names = list(batch["robot_links_pc"][0].keys())
         valid_links = self.robot_links[robot_name]
 
-        # No-object inference: pure unconditional (RR only, no VQ-VAE)
+        # Object encoding: VQ-VAE for conditioned modes, zeros for no-object
+        with torch.no_grad():
+            normal_pc, centroids, scale = self._normalize_pc_(object_pc)
+
         if self.inference_mode == "no_object":
-            return self._inference_no_object(
-                batch, B, device, dtype, link_names, valid_links,
+            # V_O = zeros: mirrors training _forward_nogt (model sees no object features)
+            # Reuse _inference_unconditioned which does CFG (skip_or=True vs False),
+            # exactly matching the CFG dropout pattern from training.
+            object_nodes = torch.zeros(
+                [B, self.object_patch, 68], device=device, dtype=dtype
+            )
+            return self._inference_unconditioned(
+                batch, object_nodes, centroids, scale,
+                B, device, dtype, link_names, valid_links,
             )
 
         # Object-conditioned modes: encode object via VQ-VAE
         with torch.no_grad():
-            normal_pc, centroids, scale = self._normalize_pc_(object_pc)
             object_tokens = self.vqvae.encode(normal_pc)
 
         object_nodes = torch.cat(
@@ -592,109 +603,6 @@ class RobotGraphV3CE(nn.Module):
             pred_trans = noisy_V_R_trans * scale + centroids
             pred_rot = noisy_V_R_rot
             pred_pose = torch.cat([pred_trans, pred_rot], dim=-1)
-
-            predict_link_pose_dict = {}
-            denoised_step = ddim_t[i + 1].item() if i < len(ddim_t) - 1 else 0
-            predict_link_pose = vector_to_matrix(pred_pose[:, :valid_links])
-            for link_id, link_name in enumerate(link_names):
-                predict_link_pose_dict[link_name] = predict_link_pose[:, link_id]
-            all_diffuse_step_poses_dict[denoised_step] = predict_link_pose_dict
-
-        return all_diffuse_step_poses_dict
-
-    def _inference_no_object(
-        self, batch, B, device, dtype, link_names, valid_links,
-    ):
-        """Pure unconditional inference without any object.
-
-        Uses skip_or=True (RR self-attention only) with dummy object nodes.
-        Denormalization uses centroids=0, scale=1 since training used
-        hand-centric normalization (no object reference available).
-        The output poses are in a canonical hand-centric frame.
-        """
-        self.noise_scheduler.set_timesteps(self.ddim_steps, device=device)
-        ddim_t = self.noise_scheduler.timesteps
-        all_diffuse_step_poses_dict = {}
-
-        # Dummy object nodes (zeros, same as no-GT training)
-        dummy_V_O = torch.zeros(
-            [B, self.object_patch, sum([3, 1, 64])], device=device, dtype=dtype
-        )
-
-        # Start from pure noise
-        noisy_V_R_trans = torch.randn(
-            [B, self.max_link_node, 3], device=device, dtype=dtype
-        )
-        noisy_V_R_rot = torch.randn(
-            [B, self.max_link_node, 3], device=device, dtype=dtype
-        )
-        link_robot_embeds = self._prepare_link_embeds(batch, B, device, dtype)
-        noisy_V_R = torch.cat(
-            [noisy_V_R_trans, noisy_V_R_rot, link_robot_embeds], dim=-1
-        )
-
-        for i, diffuse_step in enumerate(ddim_t):
-            diffuse_step = diffuse_step.item()
-            t_batch = torch.full(
-                (B,), diffuse_step, dtype=torch.long, device=device,
-            )
-
-            # Pure unconditional: skip_or=True, no cross-attention
-            pred_link_pose_noise = self.denoiser(
-                dummy_V_O, noisy_V_R, t_batch, skip_or=True,
-            )
-
-            pred_link_trans_noise = pred_link_pose_noise[:, :, :3]
-            pred_link_rot_noise = pred_link_pose_noise[:, :, 3:]
-
-            # Predict x_0
-            a_bar_t = self.noise_scheduler.alphas_cumprod[diffuse_step]
-            if i == len(ddim_t) - 1:
-                a_bar_prev = torch.tensor(1.0, device=device, dtype=dtype)
-            else:
-                a_bar_prev = self.noise_scheduler.alphas_cumprod[ddim_t[i + 1]]
-
-            x_t_trans = noisy_V_R_trans
-            x_t_rot = noisy_V_R_rot
-            x_0_trans = (
-                x_t_trans - (1 - a_bar_t).sqrt() * pred_link_trans_noise
-            ) / a_bar_t.sqrt()
-            x_0_rot = (
-                x_t_rot - (1 - a_bar_t).sqrt() * pred_link_rot_noise
-            ) / a_bar_t.sqrt()
-
-            # DDIM step
-            sigma_t = self.eta * torch.sqrt(
-                ((1 - a_bar_prev) / (1 - a_bar_t)) * (1 - a_bar_t / a_bar_prev)
-            )
-            ddim_coeffient = torch.sqrt(1 - a_bar_prev - sigma_t**2)
-
-            if i == len(ddim_t) - 1:
-                z_trans = torch.zeros_like(x_0_trans)
-                z_rot = torch.zeros_like(x_0_rot)
-            else:
-                z_trans = torch.randn_like(x_0_trans)
-                z_rot = torch.randn_like(x_0_rot)
-
-            x_prev_trans = (
-                a_bar_prev.sqrt() * x_0_trans
-                + ddim_coeffient * pred_link_trans_noise
-                + sigma_t * z_trans * self.noise_lambda
-            )
-            x_prev_rot = (
-                a_bar_prev.sqrt() * x_0_rot
-                + ddim_coeffient * pred_link_rot_noise
-                + sigma_t * z_rot * self.noise_lambda
-            )
-
-            noisy_V_R_trans = x_prev_trans
-            noisy_V_R_rot = x_prev_rot
-            noisy_V_R = torch.cat(
-                [noisy_V_R_trans, noisy_V_R_rot, link_robot_embeds], dim=-1
-            )
-
-            # Save snapshot — no denormalization (hand-centric frame, scale=1)
-            pred_pose = torch.cat([noisy_V_R_trans, noisy_V_R_rot], dim=-1)
 
             predict_link_pose_dict = {}
             denoised_step = ddim_t[i + 1].item() if i < len(ddim_t) - 1 else 0

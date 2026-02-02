@@ -2,7 +2,7 @@ model_type: 'diff_v3_ce'
 
 dataset:
   robot_names:
-    - 'allegro'
+    - 'leaphand'
   debug_object_names: null
   batch_size: 100
   num_workers: 16
@@ -24,8 +24,11 @@ model:
     allegro: 21
     shadowhand: 17
     leaphand: 17
+    robotiq_3finger: 13
+    ezgripper: 5
+    xhand: 13
   inference_config:
-    inference_mode: 'no_object' # unconditioned, palm_conditioned, no_object
+    inference_mode: 'unconditioned' # unconditioned, palm_conditioned, no_object
   bps_config:
     bps_type: 'random_uniform'
     n_bps_points: 124
@@ -61,14 +64,15 @@ model:
     - 'barrett'
     - 'shadowhand'
     - 'leaphand'
+    - 'robotiq_3finger'
   mode: 'test'
   loss_config:
     trans_weight: 1.0
     rot_weight: 1.0
 
 vis:
-  embodiment: 'allegro'
-  ckpt: 'graph_exp/diff_v3_bas_l_ce/ckpt/epoch=299.ckpt'
+  embodiment: 'leaphand'
+  ckpt: 'graph_exp/diff_v3_bas_l_ce_v2/ckpt/epoch=299.ckpt'
   split_batch_size: 100
   gpu: 0
   port: 8080

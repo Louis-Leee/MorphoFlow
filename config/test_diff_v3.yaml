@@ -1,6 +1,6 @@
 dataset:
   robot_names:
-    - 'shadowhand'
+    - 'allegro'
   debug_object_names: null
   batch_size: 100
   num_workers: 16
@@ -65,8 +65,8 @@ model:
     rot_weight: 1.0
 
 test:
-  embodiment: 'shadowhand'
-  ckpt: 'graph_exp/diff_v3_basrelx_ddim/ckpt/epoch=299.ckpt'
-  save_dir: 'graph_exp/diff_v3_basrelx_ddim/shadowhand-unconditioned-test'
+  embodiment: 'allegro'
+  ckpt: 'graph_exp/diff_v3_bas_l_ce_v2/ckpt/epoch=299.ckpt'
+  save_dir: 'graph_exp/diff_v3_bas_l_ce_v2/allegro-unconditioned-test'
   gpu: 0
   split_batch_size: 100

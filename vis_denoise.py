@@ -108,18 +108,28 @@ def build_model(config, device):
 
 
 def _generate_no_object_batches(config):
-    """Generate batches for no-object inference (no CMapDataset needed).
+    """Generate batches for no-object inference.
 
-    Returns a list of batch dicts with dummy object_pc (zeros).
-    The model's _inference_no_object() will skip VQ-VAE encoding.
+    Uses a random reference object's point cloud for denormalization
+    (centroid/scale mapping), but the model does NOT see object features
+    (V_O=zeros, skip_or=True). Each sample gets a different random
+    reference object for spatial diversity.
     """
     robot_name = config.vis.embodiment
     hand = create_hand_model(robot_name, device=torch.device("cpu"))
     batch_size = config.dataset.batch_size
 
+    # Load available object meshes for reference normalization
+    import json
+    split_path = os.path.join(ROOT_DIR, "data/CMapDataset_filtered/split_train_validate_objects.json")
+    with open(split_path) as f:
+        dataset_split = json.load(f)
+    ref_objects = dataset_split.get("validate", dataset_split.get("train", []))
+
     initial_q_list = []
     initial_se3_list = []
     robot_links_pc_list = []
+    object_pc_list = []
     for _ in range(batch_size):
         q = hand.get_initial_q()
         _, se3 = hand.get_transformed_links_pc(q)
@@ -127,12 +137,26 @@ def _generate_no_object_batches(config):
         initial_se3_list.append(se3)
         robot_links_pc_list.append(hand.links_pc)
 
+        # Sample a random reference object for normalization frame
+        import random as _random
+        ref_obj = _random.choice(ref_objects)
+        parts = ref_obj.split("+")
+        mesh_path = os.path.join(
+            ROOT_DIR, f"data/data_urdf/object/{parts[0]}/{parts[1]}/{parts[1]}.stl"
+        )
+        mesh = trimesh.load_mesh(mesh_path)
+        pts, _ = mesh.sample(65536, return_index=True)
+        indices = np.random.permutation(65536)[:512]
+        ref_pc = torch.tensor(pts[indices], dtype=torch.float32)
+        ref_pc = ref_pc + torch.randn_like(ref_pc) * 0.002
+        object_pc_list.append(ref_pc)
+
     batch = {
         "robot_name": robot_name,
         "object_name": "none",
         "initial_q": torch.stack(initial_q_list),
         "initial_se3": torch.stack(initial_se3_list),
-        "object_pc": torch.zeros(batch_size, 512, 3),
+        "object_pc": torch.stack(object_pc_list),
         "robot_links_pc": robot_links_pc_list,
     }
     return [batch]
@@ -204,8 +228,7 @@ def run_inference(config, model, device):
                     transform_dict[step] = []
                 transform_dict[step].append(pred_robot_pose)
 
-            if not no_object:
-                object_pc_list.append(object_pc.cpu())
+            object_pc_list.append(object_pc.cpu())
 
         # Concatenate splits for each step
         for step, transform_list in transform_dict.items():
@@ -223,7 +246,7 @@ def run_inference(config, model, device):
             {
                 "robot_name": batch["robot_name"],
                 "object_name": batch["object_name"],
-                "object_pc": torch.cat(object_pc_list, dim=0) if object_pc_list else None,
+                "object_pc": torch.cat(object_pc_list, dim=0),
                 "transform_dict": transform_dict,
             }
         )
@@ -318,7 +341,7 @@ def launch_viewer(vis_data, config):
         print(f"{robot_name} | {object_name} | sample {local_idx} | step {step_key}")
 
         # ---- Object mesh ----
-        if has_object:
+        if has_object and "+" in object_name:
             obj_parts = object_name.split("+")
             obj_path = os.path.join(
                 ROOT_DIR,
