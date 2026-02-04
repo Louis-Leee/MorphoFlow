@@ -76,8 +76,4 @@ vis:
   split_batch_size: 100
   gpu: 0
   port: 8080
-  save_path: "outputs/vis_cache.pt"  # 启用 cache 保存
-  ik:
-    mode: "baseline"  # baseline | thumb_extra | palm_anchor | combo
-    force_recompute: true
-    report_path: "reports/ik_report_weight_adjusted.md"
+  save_path: null

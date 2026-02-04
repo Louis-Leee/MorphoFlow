@@ -17,6 +17,7 @@ def _pos_cost_jac_multi(
     joint_var: jaxls.Var[jax.Array],
     target_link_indices: jax.Array,  # Array of indices for all target links
     target_positions: jax.Array,  # (num_targets, 3) array of target positions
+    link_weights: jax.Array,  # (num_targets,) array of per-link weights
 ) -> jax.Array:
     """
     Returns:
@@ -88,11 +89,16 @@ def _pos_cost_jac_multi(
 
     full_jac, _ = jax.lax.scan(
         _process_one_target_jac,
-        full_jac,  
-        jnp.arange(target_link_indices.shape[0]) 
+        full_jac,
+        jnp.arange(target_link_indices.shape[0])
     )
 
-    return 10 * full_jac
+    # Apply per-link weights to Jacobian: each link's 3 rows get multiplied by its weight
+    # Reshape link_weights from (num_targets,) to (num_targets, 1), then repeat for 3 rows per link
+    weights_expanded = jnp.repeat(link_weights, 3)  # (num_targets * 3,)
+    weighted_jac = full_jac * weights_expanded[:, None]  # Broadcast to (num_targets * 3, num_actuated_joints)
+
+    return 10 * weighted_jac
 
 class PyrokiRetarget:
     def __init__(
@@ -100,6 +106,8 @@ class PyrokiRetarget:
             urdf_path: str,
             target_link_name: list[str],
             hand_joint_names: list[str] | None = None,
+            link_weights: list[float] | None = None,
+            locked_joint_indices: list[int] | None = None,
         ):
         urdf = yourdfpy.URDF.load(urdf_path)
         self.robot = pk.Robot.from_urdf(urdf)
@@ -107,32 +115,42 @@ class PyrokiRetarget:
             self.robot.links.names.index(name) for name in target_link_name
         ])
 
-        # Mimic joint mapping for robots where HandModel DOF != pyroki actuated DOF
-        # (e.g. ezgripper: 10 HandModel DOF vs 8 pyroki actuated DOF)
+        # Per-link weights for IK optimization (default: all 1.0)
+        if link_weights is not None:
+            self.link_weights = jnp.array(link_weights)
+        else:
+            self.link_weights = jnp.ones(len(target_link_name))
+
+        # Locked joint indices: these joints will keep their initial values after IK
+        self.locked_joint_indices = locked_joint_indices
+
+        # Joint ordering mapping: pyroki may topologically sort joints differently
+        # than pytorch-kinematics, and mimic joints need to be dropped/expanded.
         self._hand_to_pyroki = None
         self._pyroki_to_hand = None
 
         if hand_joint_names is not None:
-            n_actuated = self.robot.joints.num_actuated_joints
-            n_hand = len(hand_joint_names)
+            # Parse mimic and fixed joints from URDF
+            mimic_map = {}  # mimic_joint_name -> source_joint_name
+            fixed_joints = set()
+            for jname, joint in urdf.joint_map.items():
+                if joint.mimic is not None:
+                    mimic_map[jname] = joint.mimic.joint
+                if joint.type == 'fixed':
+                    fixed_joints.add(jname)
 
-            if n_hand != n_actuated:
-                # Parse mimic and fixed joints from URDF
-                mimic_map = {}  # mimic_joint_name -> source_joint_name
-                fixed_joints = set()
-                for jname, joint in urdf.joint_map.items():
-                    if joint.mimic is not None:
-                        mimic_map[jname] = joint.mimic.joint
-                    if joint.type == 'fixed':
-                        fixed_joints.add(jname)
+            # Get pyroki's actual actuated joint order (topologically sorted)
+            pyroki_actuated_names = [
+                n for n in self.robot.joints.names
+                if n not in fixed_joints and n not in mimic_map
+            ]
 
-                # Get pyroki's actuated joint names in its internal (topological) order
-                pyroki_actuated_names = [
-                    n for n in self.robot.joints.names
-                    if n not in fixed_joints and n not in mimic_map
-                ]
+            # Hand's actuated joints (remove mimic, preserve hand ordering)
+            hand_actuated_names = [n for n in hand_joint_names if n not in mimic_map]
 
-                # hand→pyroki: for each pyroki actuated slot, which hand index to read from
+            # Build mapping if count OR ordering differs
+            if hand_actuated_names != pyroki_actuated_names:
+                # hand→pyroki: for each pyroki slot, which hand index to read from
                 self._hand_to_pyroki = jnp.array([
                     hand_joint_names.index(n) for n in pyroki_actuated_names
                 ])
@@ -172,7 +190,8 @@ class PyrokiRetarget:
                 robot: pk.Robot,
                 joint_var: jaxls.Var[jax.Array],
                 target_link_indices: jax.Array,  # Array of indices
-                target_positions: jnp.ndarray # (num_targets, 3) array of target positions
+                target_positions: jnp.ndarray, # (num_targets, 3) array of target positions
+                link_weights: jax.Array,  # (num_targets,) array of per-link weights
             ):
                 joint_cfg = vals[joint_var]
 
@@ -187,9 +206,12 @@ class PyrokiRetarget:
                 # pos_error: (num_targets, 3)
                 pos_error = T_world_target_link_translations - target_positions
 
+                # Apply per-link weights: (num_targets, 3) * (num_targets, 1) -> (num_targets, 3)
+                weighted_error = pos_error * link_weights[:, None]
+
                 # Flatten the error vector to match jaxls's expectation for residuals
                 # flattened_pos_error: (num_targets * 3,)
-                flattened_pos_error = pos_error.flatten()
+                flattened_pos_error = weighted_error.flatten()
 
                 # Return the weighted flattened error and cache necessary values for the Jacobian
                 return (
@@ -202,7 +224,8 @@ class PyrokiRetarget:
                     self.robot,
                     joint_var,
                     self.target_link_index,
-                    target_link_pos
+                    target_link_pos,
+                    self.link_weights,
                 ),
                 pk.costs.limit_cost(self.robot, joint_var, weight=10.0),
             ]
@@ -221,6 +244,11 @@ class PyrokiRetarget:
             return sol[joint_var]
 
         result = jax.vmap(solve_single)(initial_q_actuated, target_pos)
+
+        # Lock specified joints: reset to initial values after IK optimization
+        if self.locked_joint_indices is not None:
+            for idx in self.locked_joint_indices:
+                result = result.at[:, idx].set(initial_q_actuated[:, idx])
 
         # Map pyroki actuated DOF → hand DOF (expand mimic joints back)
         if self._pyroki_to_hand is not None:

@@ -17,7 +17,7 @@ sys.path.append(ROOT_DIR)
 
 def main():
     # .pt file path for visualization
-    file_name = 'graph_exp/tro_l/leaphand-unconditioned-test/vis.pt'
+    file_name = 'graph_exp/diff_v3_basrelx/leaphand-unconditioned-test/vis.pt'
     vis_info = torch.load(file_name)
 
     def on_update(idx):

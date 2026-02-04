@@ -40,6 +40,81 @@ from utils.optimization import process_transform
 from validation.validate_utils import validate_isaac
 
 
+# ── Fingertip joint extraction for pure-rotation joints ─────────────────
+# These joints have zero positional Jacobian, so IK leaves them unchanged.
+# We extract their angles from the diffusion model's predicted SE3 rotations.
+
+FINGERTIP_JOINTS = {
+    'leaphand': {
+        # (parent_link, child_link): q_index
+        ('dip', 'fingertip'): 9,           # joint 3
+        ('dip_2', 'fingertip_2'): 13,      # joint 7
+        ('dip_3', 'fingertip_3'): 17,      # joint 11
+        ('thumb_dip', 'thumb_fingertip'): 21,  # joint 15
+    },
+}
+
+# ── LeapHand tip mapping (use fixed joints instead of revolute for IK) ──
+# NOTE: thumb_fingertip is NOT included because extra_thumb_tip_head has Z offset
+# in the opposite direction (-0.015 vs +0.015 for other fingers)
+LEAPHAND_TIP_MAPPING = {
+    'fingertip': 'extra_index_tip_head',
+    'fingertip_2': 'extra_middle_tip_head',
+    'fingertip_3': 'extra_ring_tip_head',
+}
+
+# ── LeapHand per-link IK weights ──
+# 实验: 疯狂提高 palm 权重，让 IK 优先对齐手掌
+LEAPHAND_LINK_WEIGHTS = {
+    'palm_lower': 1.0,
+    'extra_ring_tip_head': 0.5,
+    'extra_middle_tip_head': 0.7,
+    'extra_index_tip_head': 0.8,
+    'thumb_fingertip': 0.8,
+}
+
+# ── LeapHand locked joints (keep at initial value during IK) ──
+# Set to empty to disable joint locking
+LEAPHAND_LOCKED_JOINTS = []
+
+
+def extract_fingertip_joints(predict_q, transform_dict, robot_name):
+    """
+    Extract fingertip joint angles from diffusion SE3 rotation.
+
+    For joints that are pure rotation (don't affect link position), the IK
+    solver cannot optimize them. Instead, we compute the joint angle from
+    the relative rotation between parent and child links in the diffusion output.
+    """
+    if robot_name not in FINGERTIP_JOINTS:
+        return predict_q
+
+    for (parent, child), q_idx in FINGERTIP_JOINTS[robot_name].items():
+        if parent not in transform_dict or child not in transform_dict:
+            continue
+        R_parent = transform_dict[parent][:, :3, :3]  # (B, 3, 3)
+        R_child = transform_dict[child][:, :3, :3]
+        # Relative rotation: R_rel = R_parent^T @ R_child
+        R_rel = torch.bmm(R_parent.transpose(-1, -2), R_child)
+        # Extract rotation angle around Z-axis (all fingertip joints use axis 0,0,-1)
+        # For Rz(θ): R[1,0] = sin(θ), R[0,0] = cos(θ)
+        # For thumb (q_idx=21): remove π offset in URDF origin before extracting angle
+        if q_idx == 21:  # thumb_fingertip has rpy="0 0 3.14159" offset
+            R_offset = torch.tensor([[-1, 0, 0], [0, -1, 0], [0, 0, 1]],
+                                    dtype=R_rel.dtype, device=R_rel.device)
+            R_joint_only = torch.bmm(
+                R_offset.unsqueeze(0).expand(R_rel.shape[0], -1, -1).transpose(-1, -2),
+                R_rel
+            )
+            angle = torch.atan2(R_joint_only[:, 1, 0], R_joint_only[:, 0, 0])
+        else:
+            angle = torch.atan2(R_rel[:, 1, 0], R_rel[:, 0, 0])
+        # Negate because joint axis is (0, 0, -1)
+        predict_q[:, q_idx] = -angle
+
+    return predict_q
+
+
 # ── Pretty terminal output ──────────────────────────────────────────────
 
 BOLD = "\033[1m"
@@ -220,6 +295,12 @@ def eval_single_hand(
             predict_q = torch.from_numpy(np.array(predict_q_jnp)).to(
                 device=device, dtype=initial_q.dtype
             )
+
+            # Extract fingertip joint angles from diffusion rotation
+            predict_q = extract_fingertip_joints(
+                predict_q, clean_robot_pose, batch["robot_name"]
+            )
+
             initial_q_list.append(initial_q)
             initial_se3_list.append(initial_se3)
             predict_q_list.append(predict_q)
@@ -362,7 +443,22 @@ def test(config, hand_overrides=None, ckpt_override=None, gpu_override=None):
         hand = create_hand_model(hand_name, device)
         urdf_path = robot_urdf_meta["urdf_path"][hand_name]
         target_links = list(hand.links_pc.keys())
-        ik_solver = PyrokiRetarget(urdf_path, target_links, hand_joint_names=hand.get_joint_orders())
+
+        # Apply LeapHand tip mapping, weights, and locked joints
+        ik_target_links = target_links
+        link_weights = None
+        locked_joints = None
+        if hand_name == 'leaphand':
+            ik_target_links = [LEAPHAND_TIP_MAPPING.get(l, l) for l in target_links]
+            link_weights = [LEAPHAND_LINK_WEIGHTS.get(l, 1.0) for l in ik_target_links]
+            locked_joints = LEAPHAND_LOCKED_JOINTS
+
+        ik_solver = PyrokiRetarget(
+            urdf_path, ik_target_links,
+            hand_joint_names=hand.get_joint_orders(),
+            link_weights=link_weights,
+            locked_joint_indices=locked_joints,
+        )
         batch_retarget = jax.jit(ik_solver.solve_retarget)
 
         results = eval_single_hand(
