@@ -24,6 +24,8 @@ model:
     robotiq_3finger: 13
     ezgripper: 5
     leaphand: 17
+    leaphand_graph_1: 13
+    leaphand_graph_2: 13
     xhand: 13
   inference_config:
     inference_mode: 'unconditioned'
@@ -58,6 +60,8 @@ model:
     - 'robotiq_3finger'
     - 'ezgripper'
     - 'leaphand'
+    - 'leaphand_graph_1'
+    - 'leaphand_graph_2'
     - 'xhand'
   mode: 'test'
   loss_config:

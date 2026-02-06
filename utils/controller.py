@@ -47,6 +47,26 @@ def get_link_dir(robot_name, joint_name):
             link_dir = torch.tensor([0, 1, 0], dtype=torch.float32)
         else:
             link_dir = torch.tensor([0, -1, 0], dtype=torch.float32)
+    elif robot_name == 'leaphand_graph_1':
+        # LeapHand variant without middle finger (joints 4-7 removed)
+        if joint_name in ['13']:
+            return None
+        if joint_name in ['0', '8']:  # X-axis joints (no '4')
+            link_dir = torch.tensor([1, 0, 0], dtype=torch.float32)
+        elif joint_name in ['1', '9', '12', '14']:  # Y-axis joints (no '5')
+            link_dir = torch.tensor([0, 1, 0], dtype=torch.float32)
+        else:
+            link_dir = torch.tensor([0, -1, 0], dtype=torch.float32)
+    elif robot_name == 'leaphand_graph_2':
+        # LeapHand variant without index finger (joints 0-3 removed)
+        if joint_name in ['13']:
+            return None
+        if joint_name in ['4', '8']:  # X-axis joints (no '0')
+            link_dir = torch.tensor([1, 0, 0], dtype=torch.float32)
+        elif joint_name in ['5', '9', '12', '14']:  # Y-axis joints (no '1')
+            link_dir = torch.tensor([0, 1, 0], dtype=torch.float32)
+        else:
+            link_dir = torch.tensor([0, -1, 0], dtype=torch.float32)
     elif robot_name == 'xhand':
         if joint_name in ['right_hand_thumb_bend_joint', 'right_hand_index_bend_joint']:
             return None

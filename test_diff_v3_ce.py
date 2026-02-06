@@ -44,6 +44,9 @@ from validation.validate_utils import validate_isaac
 # These joints have zero positional Jacobian, so IK leaves them unchanged.
 # We extract their angles from the diffusion model's predicted SE3 rotations.
 
+# Robotiq 3-finger has a fixed rpy offset in joint_4 origin
+ROBOTIQ_JOINT4_OFFSET = -0.436332312999  # rpy="0 -0.436332312999 0" in URDF
+
 FINGERTIP_JOINTS = {
     'leaphand': {
         # (parent_link, child_link): q_index
@@ -51,6 +54,37 @@ FINGERTIP_JOINTS = {
         ('dip_2', 'fingertip_2'): 13,      # joint 7
         ('dip_3', 'fingertip_3'): 17,      # joint 11
         ('thumb_dip', 'thumb_fingertip'): 21,  # joint 15
+    },
+    'leaphand_graph_1': {
+        # No middle finger (joints 4-7 removed)
+        ('dip', 'fingertip'): 9,           # joint 3 (unchanged)
+        ('dip_3', 'fingertip_3'): 13,      # joint 11 -> q_idx 13 (was 17)
+        ('thumb_dip', 'thumb_fingertip'): 17,  # joint 15 -> q_idx 17 (was 21)
+    },
+    'leaphand_graph_2': {
+        # No index finger (joints 0-3 removed)
+        ('dip_2', 'fingertip_2'): 9,       # joint 7 -> q_idx 9
+        ('dip_3', 'fingertip_3'): 13,      # joint 11 -> q_idx 13
+        ('thumb_dip', 'thumb_fingertip'): 17,  # joint 15 -> q_idx 17
+    },
+    'ezgripper': {
+        # L2 joints are pure Y-axis rotation, extract from SE3 rotation
+        ('left_ezgripper_finger_L1_1', 'left_ezgripper_finger_L2_1'): 7,
+        ('left_ezgripper_finger_L1_2', 'left_ezgripper_finger_L2_2'): 9,
+    },
+    'robotiq_3finger': {
+        # joint_4 are pure Y-axis rotation with fixed offset, extract from SE3 rotation
+        ('gripper_fingerA_med', 'gripper_fingerA_dist'): 8,
+        ('gripper_fingerB_med', 'gripper_fingerB_dist'): 12,
+        ('gripper_fingerC_med', 'gripper_fingerC_dist'): 16,
+    },
+    'xhand': {
+        # joint2 are pure rotation joints - thumb uses Y-axis, others use X-axis
+        ('right_hand_thumb_rota_link1', 'right_hand_thumb_rota_link2'): 8,
+        ('right_hand_index_rota_link1', 'right_hand_index_rota_link2'): 11,
+        ('right_hand_mid_link1', 'right_hand_mid_link2'): 13,
+        ('right_hand_ring_link1', 'right_hand_ring_link2'): 15,
+        ('right_hand_pinky_link1', 'right_hand_pinky_link2'): 17,
     },
 }
 
@@ -62,9 +96,19 @@ def extract_fingertip_joints(predict_q, transform_dict, robot_name):
     For joints that are pure rotation (don't affect link position), the IK
     solver cannot optimize them. Instead, we compute the joint angle from
     the relative rotation between parent and child links in the diffusion output.
+
+    Different robots have different joint axes:
+    - Leaphand: Z-axis rotation (0, 0, -1), angle = atan2(R[1,0], R[0,0])
+    - EZGripper: Y-axis rotation (0, 1, 0), angle = atan2(R[0,2], R[2,2])
+    - Robotiq 3-finger: Y-axis rotation with fixed offset, angle = atan2(R[0,2], R[2,2]) - offset
+    - XHand: mixed axes - thumb uses Y-axis, other fingers use X-axis
     """
     if robot_name not in FINGERTIP_JOINTS:
         return predict_q
+
+    is_ezgripper = (robot_name == 'ezgripper')
+    is_robotiq = (robot_name == 'robotiq_3finger')
+    is_xhand = (robot_name == 'xhand')
 
     for (parent, child), q_idx in FINGERTIP_JOINTS[robot_name].items():
         if parent not in transform_dict or child not in transform_dict:
@@ -73,21 +117,46 @@ def extract_fingertip_joints(predict_q, transform_dict, robot_name):
         R_child = transform_dict[child][:, :3, :3]
         # Relative rotation: R_rel = R_parent^T @ R_child
         R_rel = torch.bmm(R_parent.transpose(-1, -2), R_child)
-        # Extract rotation angle around Z-axis (all fingertip joints use axis 0,0,-1)
-        # For Rz(θ): R[1,0] = sin(θ), R[0,0] = cos(θ)
-        # For thumb (q_idx=21): remove π offset in URDF origin before extracting angle
-        if q_idx == 21:  # thumb_fingertip has rpy="0 0 3.14159" offset
-            R_offset = torch.tensor([[-1, 0, 0], [0, -1, 0], [0, 0, 1]],
-                                    dtype=R_rel.dtype, device=R_rel.device)
-            R_joint_only = torch.bmm(
-                R_offset.unsqueeze(0).expand(R_rel.shape[0], -1, -1).transpose(-1, -2),
-                R_rel
-            )
-            angle = torch.atan2(R_joint_only[:, 1, 0], R_joint_only[:, 0, 0])
+
+        if is_ezgripper:
+            # EZGripper: Y-axis rotation, axis=(0,1,0), no offset
+            # R = [[cos, 0, sin], [0, 1, 0], [-sin, 0, cos]]
+            # angle = atan2(R[0,2], R[2,2]) = atan2(sin, cos)
+            angle = torch.atan2(R_rel[:, 0, 2], R_rel[:, 2, 2])
+            predict_q[:, q_idx] = angle
+        elif is_robotiq:
+            # Robotiq 3-finger: Y-axis rotation with fixed offset
+            # URDF has rpy="0 -0.436332312999 0" offset in joint_4 origin
+            # R_rel = Ry(offset + joint_angle), so joint_angle = extracted - offset
+            angle_with_offset = torch.atan2(R_rel[:, 0, 2], R_rel[:, 2, 2])
+            predict_q[:, q_idx] = angle_with_offset - ROBOTIQ_JOINT4_OFFSET
+        elif is_xhand:
+            # XHand: mixed axes - thumb uses Y-axis, other fingers use X-axis
+            if 'thumb' in parent:
+                # Y-axis rotation: Ry = [[cos,0,sin],[0,1,0],[-sin,0,cos]]
+                # angle = atan2(R[0,2], R[2,2])
+                angle = torch.atan2(R_rel[:, 0, 2], R_rel[:, 2, 2])
+            else:
+                # X-axis rotation: Rx = [[1,0,0],[0,cos,-sin],[0,sin,cos]]
+                # angle = atan2(R[2,1], R[1,1])
+                angle = torch.atan2(R_rel[:, 2, 1], R_rel[:, 1, 1])
+            predict_q[:, q_idx] = angle
         else:
-            angle = torch.atan2(R_rel[:, 1, 0], R_rel[:, 0, 0])
-        # Negate because joint axis is (0, 0, -1)
-        predict_q[:, q_idx] = -angle
+            # Leaphand: Z-axis rotation, axis=(0, 0, -1)
+            # For Rz(θ): R[1,0] = sin(θ), R[0,0] = cos(θ)
+            # For thumb (q_idx=21): remove π offset in URDF origin before extracting angle
+            if q_idx == 21:  # thumb_fingertip has rpy="0 0 3.14159" offset
+                R_offset = torch.tensor([[-1, 0, 0], [0, -1, 0], [0, 0, 1]],
+                                        dtype=R_rel.dtype, device=R_rel.device)
+                R_joint_only = torch.bmm(
+                    R_offset.unsqueeze(0).expand(R_rel.shape[0], -1, -1).transpose(-1, -2),
+                    R_rel
+                )
+                angle = torch.atan2(R_joint_only[:, 1, 0], R_joint_only[:, 0, 0])
+            else:
+                angle = torch.atan2(R_rel[:, 1, 0], R_rel[:, 0, 0])
+            # Negate because joint axis is (0, 0, -1)
+            predict_q[:, q_idx] = -angle
 
     return predict_q
 
@@ -420,7 +489,18 @@ def test(config, hand_overrides=None, ckpt_override=None, gpu_override=None):
         hand = create_hand_model(hand_name, device)
         urdf_path = robot_urdf_meta["urdf_path"][hand_name]
         target_links = list(hand.links_pc.keys())
-        ik_solver = PyrokiRetarget(urdf_path, target_links, hand_joint_names=hand.get_joint_orders())
+
+        # Apply hand-specific IK configurations
+        ik_target_links = target_links
+        link_weights = None
+        locked_joints = None
+
+        ik_solver = PyrokiRetarget(
+            urdf_path, ik_target_links,
+            hand_joint_names=hand.get_joint_orders(),
+            link_weights=link_weights,
+            locked_joint_indices=locked_joints,
+        )
         batch_retarget = jax.jit(ik_solver.solve_retarget)
 
         results = eval_single_hand(

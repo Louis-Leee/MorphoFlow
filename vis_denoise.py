@@ -268,6 +268,20 @@ LEAPHAND_TIP_MAPPING = {
     # thumb_fingertip stays as-is (don't use extra_thumb_tip_head)
 }
 
+# ── LeapHand Graph 1 tip mapping (no middle finger) ──
+LEAPHAND_GRAPH_1_TIP_MAPPING = {
+    'fingertip': 'extra_index_tip_head',
+    'fingertip_3': 'extra_ring_tip_head',
+    # No fingertip_2 (middle finger removed)
+}
+
+# ── LeapHand Graph 2 tip mapping (no index finger) ──
+LEAPHAND_GRAPH_2_TIP_MAPPING = {
+    'fingertip_2': 'extra_middle_tip_head',
+    'fingertip_3': 'extra_ring_tip_head',
+    # No fingertip (index finger removed)
+}
+
 # ── LeapHand per-link IK weights ──
 # 实验: 疯狂提高 palm 权重，让 IK 优先对齐手掌
 LEAPHAND_LINK_WEIGHTS = {
@@ -276,6 +290,24 @@ LEAPHAND_LINK_WEIGHTS = {
     'extra_middle_tip_head': 0.7,  # 大幅降低中指
     'extra_index_tip_head': 0.8,   # 大幅降低食指
     'thumb_fingertip': 3.0,        # 降低拇指
+}
+
+# ── LeapHand Graph 1 per-link IK weights (no middle finger) ──
+LEAPHAND_GRAPH_1_LINK_WEIGHTS = {
+    'palm_lower': 3.0,
+    'extra_ring_tip_head': 0.5,
+    'extra_index_tip_head': 0.8,
+    'thumb_fingertip': 3.0,
+    # No extra_middle_tip_head (middle finger removed)
+}
+
+# ── LeapHand Graph 2 per-link IK weights (no index finger) ──
+LEAPHAND_GRAPH_2_LINK_WEIGHTS = {
+    'palm_lower': 3.0,
+    'extra_ring_tip_head': 0.5,
+    'extra_middle_tip_head': 0.7,
+    'thumb_fingertip': 3.0,
+    # No extra_index_tip_head (index finger removed)
 }
 
 # ── LeapHand locked joints (keep at initial value during IK) ──
@@ -291,6 +323,9 @@ IK_MODE_DEFAULTS = {
 }
 
 # ── Fingertip joint extraction for pure-rotation joints ─────────────────
+# Robotiq 3-finger has a fixed rpy offset in joint_4 origin
+ROBOTIQ_JOINT4_OFFSET = -0.436332312999  # rpy="0 -0.436332312999 0" in URDF
+
 FINGERTIP_JOINTS = {
     'leaphand': {
         ('dip', 'fingertip'): 9,
@@ -298,32 +333,104 @@ FINGERTIP_JOINTS = {
         ('dip_3', 'fingertip_3'): 17,
         ('thumb_dip', 'thumb_fingertip'): 21,
     },
+    'leaphand_graph_1': {
+        ('dip', 'fingertip'): 9,           # Index: unchanged
+        ('dip_3', 'fingertip_3'): 13,      # Ring: 17 -> 13
+        ('thumb_dip', 'thumb_fingertip'): 17,  # Thumb: 21 -> 17
+    },
+    'leaphand_graph_2': {
+        ('dip_2', 'fingertip_2'): 9,       # Middle: joint '7' at index 9
+        ('dip_3', 'fingertip_3'): 13,      # Ring: joint '11' at index 13
+        ('thumb_dip', 'thumb_fingertip'): 17,  # Thumb: joint '15' at index 17
+    },
+    'ezgripper': {
+        # L2 joints are pure Y-axis rotation, extract from SE3 rotation
+        ('left_ezgripper_finger_L1_1', 'left_ezgripper_finger_L2_1'): 7,
+        ('left_ezgripper_finger_L1_2', 'left_ezgripper_finger_L2_2'): 9,
+    },
+    'robotiq_3finger': {
+        # joint_4 are pure Y-axis rotation with fixed offset, extract from SE3 rotation
+        ('gripper_fingerA_med', 'gripper_fingerA_dist'): 8,
+        ('gripper_fingerB_med', 'gripper_fingerB_dist'): 12,
+        ('gripper_fingerC_med', 'gripper_fingerC_dist'): 16,
+    },
+    'xhand': {
+        # joint2 are pure rotation joints - thumb uses Y-axis, others use X-axis
+        ('right_hand_thumb_rota_link1', 'right_hand_thumb_rota_link2'): 8,
+        ('right_hand_index_rota_link1', 'right_hand_index_rota_link2'): 11,
+        ('right_hand_mid_link1', 'right_hand_mid_link2'): 13,
+        ('right_hand_ring_link1', 'right_hand_ring_link2'): 15,
+        ('right_hand_pinky_link1', 'right_hand_pinky_link2'): 17,
+    },
 }
 
 
 def extract_fingertip_joints(predict_q, transform_dict, robot_name):
-    """Extract fingertip joint angles from diffusion SE3 rotation."""
+    """Extract fingertip joint angles from diffusion SE3 rotation.
+
+    For pure-rotation joints (where position doesn't change significantly),
+    we extract the joint angle from the relative rotation between parent/child links.
+
+    Different robots have different joint axes:
+    - Leaphand: Z-axis rotation (0, 0, -1), angle = atan2(R[1,0], R[0,0])
+    - EZGripper: Y-axis rotation (0, 1, 0), angle = atan2(R[0,2], R[2,2])
+    - Robotiq 3-finger: Y-axis rotation with fixed offset, angle = atan2(R[0,2], R[2,2]) - offset
+    - XHand: mixed axes - thumb uses Y-axis, other fingers use X-axis
+    """
     if robot_name not in FINGERTIP_JOINTS:
         return predict_q
+
+    is_ezgripper = (robot_name == 'ezgripper')
+    is_robotiq = (robot_name == 'robotiq_3finger')
+    is_xhand = (robot_name == 'xhand')
+
     for (parent, child), q_idx in FINGERTIP_JOINTS[robot_name].items():
         if parent not in transform_dict or child not in transform_dict:
             continue
         R_parent = transform_dict[parent][:, :3, :3]
         R_child = transform_dict[child][:, :3, :3]
         R_rel = torch.bmm(R_parent.transpose(-1, -2), R_child)
-        # For thumb (q_idx=21): remove π offset in URDF origin before extracting angle
-        if q_idx == 21:  # thumb_fingertip has rpy="0 0 3.14159" offset
-            R_offset = torch.tensor([[-1, 0, 0], [0, -1, 0], [0, 0, 1]],
-                                    dtype=R_rel.dtype, device=R_rel.device)
-            R_joint_only = torch.bmm(
-                R_offset.unsqueeze(0).expand(R_rel.shape[0], -1, -1).transpose(-1, -2),
-                R_rel
-            )
-            angle = torch.atan2(R_joint_only[:, 1, 0], R_joint_only[:, 0, 0])
+
+        if is_ezgripper:
+            # EZGripper: Y-axis rotation, axis=(0,1,0), no offset
+            # R = [[cos, 0, sin], [0, 1, 0], [-sin, 0, cos]]
+            # angle = atan2(R[0,2], R[2,2]) = atan2(sin, cos)
+            angle = torch.atan2(R_rel[:, 0, 2], R_rel[:, 2, 2])
+            predict_q[:, q_idx] = angle
+        elif is_robotiq:
+            # Robotiq 3-finger: Y-axis rotation with fixed offset
+            # URDF has rpy="0 -0.436332312999 0" offset in joint_4 origin
+            # R_rel = Ry(offset + joint_angle), so joint_angle = extracted - offset
+            angle_with_offset = torch.atan2(R_rel[:, 0, 2], R_rel[:, 2, 2])
+            predict_q[:, q_idx] = angle_with_offset - ROBOTIQ_JOINT4_OFFSET
+        elif is_xhand:
+            # XHand: mixed axes - thumb uses Y-axis, other fingers use X-axis
+            if 'thumb' in parent:
+                # Y-axis rotation: Ry = [[cos,0,sin],[0,1,0],[-sin,0,cos]]
+                # angle = atan2(R[0,2], R[2,2])
+                angle = torch.atan2(R_rel[:, 0, 2], R_rel[:, 2, 2])
+            else:
+                # X-axis rotation: Rx = [[1,0,0],[0,cos,-sin],[0,sin,cos]]
+                # angle = atan2(R[2,1], R[1,1])
+                angle = torch.atan2(R_rel[:, 2, 1], R_rel[:, 1, 1])
+            predict_q[:, q_idx] = angle
         else:
-            angle = torch.atan2(R_rel[:, 1, 0], R_rel[:, 0, 0])
-        # Negate because joint axis is (0, 0, -1)
-        predict_q[:, q_idx] = -angle
+            # Leaphand: Z-axis rotation, axis=(0, 0, -1)
+            # For thumb: remove π offset in URDF origin before extracting angle
+            # thumb_fingertip has rpy="0 0 3.14159" offset - detect by link name
+            is_thumb = (child == 'thumb_fingertip')
+            if is_thumb:
+                R_offset = torch.tensor([[-1, 0, 0], [0, -1, 0], [0, 0, 1]],
+                                        dtype=R_rel.dtype, device=R_rel.device)
+                R_joint_only = torch.bmm(
+                    R_offset.unsqueeze(0).expand(R_rel.shape[0], -1, -1).transpose(-1, -2),
+                    R_rel
+                )
+                angle = torch.atan2(R_joint_only[:, 1, 0], R_joint_only[:, 0, 0])
+            else:
+                angle = torch.atan2(R_rel[:, 1, 0], R_rel[:, 0, 0])
+            # Negate because joint axis is (0, 0, -1)
+            predict_q[:, q_idx] = -angle
     return predict_q
 
 
@@ -412,13 +519,27 @@ def run_pyroki_ik(vis_data, config):
         urdf_path = urdf_meta["urdf_path"][robot_name]
         target_links = list(hand.links_pc.keys())
 
-        # LeapHand: 用 fixed joint 的 extra tip 链接替代 revolute joint 的 fingertip 链接
+        # LeapHand variants: 用 fixed joint 的 extra tip 链接替代 revolute joint 的 fingertip 链接
         # NOTE: thumb only mapped when ik_cfg.thumb_use_extra=True
         target_links_ik = target_links.copy()
         link_weights = None
         locked_joints = None
-        if robot_name == 'leaphand':
-            tip_mapping = dict(LEAPHAND_TIP_MAPPING)
+        if robot_name.startswith('leaphand'):
+            # Select config based on variant
+            if robot_name == 'leaphand':
+                tip_mapping = dict(LEAPHAND_TIP_MAPPING)
+                link_weights_base = LEAPHAND_LINK_WEIGHTS
+            elif robot_name == 'leaphand_graph_1':
+                tip_mapping = dict(LEAPHAND_GRAPH_1_TIP_MAPPING)
+                link_weights_base = LEAPHAND_GRAPH_1_LINK_WEIGHTS
+            elif robot_name == 'leaphand_graph_2':
+                tip_mapping = dict(LEAPHAND_GRAPH_2_TIP_MAPPING)
+                link_weights_base = LEAPHAND_GRAPH_2_LINK_WEIGHTS
+            else:
+                # Unknown variant, use empty defaults
+                tip_mapping = {}
+                link_weights_base = {}
+
             if ik_cfg["thumb_use_extra"]:
                 tip_mapping["thumb_fingertip"] = "extra_thumb_tip_head"
             for old_tip, new_tip in tip_mapping.items():
@@ -428,7 +549,7 @@ def run_pyroki_ik(vis_data, config):
             if ik_cfg["add_base_anchor"] and "base" not in target_links_ik:
                 target_links_ik.append("base")
             # Build per-link weights array
-            link_weights = [LEAPHAND_LINK_WEIGHTS.get(name, 1.0) for name in target_links_ik]
+            link_weights = [link_weights_base.get(name, 1.0) for name in target_links_ik]
             for i, name in enumerate(target_links_ik):
                 if name == "base":
                     link_weights[i] = ik_cfg["base_anchor_weight"]
@@ -438,14 +559,14 @@ def run_pyroki_ik(vis_data, config):
             # Locked joints: keep at initial value during IK
             locked_joints = LEAPHAND_LOCKED_JOINTS
             if ik_cfg["thumb_use_extra"]:
-                print("  LeapHand: Using extra_*_tip_head for fingers + thumb")
+                print(f"  {robot_name}: Using extra_*_tip_head for fingers + thumb")
             else:
-                print("  LeapHand: Using extra_*_tip_head for fingers, thumb_fingertip unchanged")
+                print(f"  {robot_name}: Using extra_*_tip_head for fingers, thumb_fingertip unchanged")
             if ik_cfg["add_base_anchor"]:
-                print("  LeapHand: Added base anchor target for palm orientation")
+                print(f"  {robot_name}: Added base anchor target for palm orientation")
             if locked_joints:
-                print(f"  LeapHand: Locked joints {locked_joints} (PIP joints)")
-            print(f"  LeapHand: Link weights: palm_lower={LEAPHAND_LINK_WEIGHTS.get('palm_lower', 1.0)}")
+                print(f"  {robot_name}: Locked joints {locked_joints} (PIP joints)")
+            print(f"  {robot_name}: Link weights: palm_lower={link_weights_base.get('palm_lower', 1.0)}")
         elif ik_cfg["weight_overrides"]:
             link_weights = [ik_cfg["weight_overrides"].get(name, 1.0) for name in target_links_ik]
 

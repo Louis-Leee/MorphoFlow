@@ -17,8 +17,11 @@ PALM_LINK_NAMES: Dict[str, str] = {
     "barrett": "bh_base_link",
     "shadowhand": "palm",
     "leaphand": "palm_lower",
+    "leaphand_graph_1": "palm_lower",  # Same palm as leaphand
+    "leaphand_graph_2": "palm_lower",  # Same palm as leaphand
     "ezgripper": "left_ezgripper_palm_link",
     "robotiq_3finger": "gripper_palm",
+    "xhand": "right_hand_link",
 }
 
 

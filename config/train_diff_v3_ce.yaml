@@ -73,14 +73,14 @@ model:
 
 train:
   lr: 1.0e-4
-  epochs: 300
+  epochs: 700
   lr_step: 20
   lr_gamma: 0.8
   save_interval: 10
-  save_dir: 'graph_exp/diff_v3_bas_l_ce'
+  save_dir: 'graph_exp/diff_v3_bas_l_ce_v2'
   project_name: 'trograsp-fm'
-  experiment_name: 'diff_v3_ce'
-  resume_from: null
+  experiment_name: 'diff_v3_bas_l_ce_v2'
+  resume_from: 'graph_exp/diff_v3_bas_l_ce_v2/ckpt/epoch=299.ckpt'
   pretrained_from: null
   gpus: 8
   gradient_clip_val: 1.0

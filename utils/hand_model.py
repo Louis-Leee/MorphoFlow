@@ -111,12 +111,21 @@ class HandModel:
         """
         :param q: (9 + DOF,), joint values (rot6d representation)
         :param num_points: int, number of sampled points
-        :return: ((N, 3), list), sampled point cloud (numpy) & index
+        :return: ((N, 4), list), sampled point cloud with link index & selected indices
         """
         if q is None:
             q = self.get_canonical_q()
 
-        sampled_pc = self.get_transformed_links_pc(q, self.vertices)
+        all_pc_se3, _ = self.get_transformed_links_pc(q, self.vertices)
+
+        # Concatenate all point clouds with link index as 4th column
+        all_pc_with_idx = []
+        for link_idx, (link_name, pc) in enumerate(all_pc_se3.items()):
+            idx_col = torch.full((pc.shape[0], 1), link_idx, dtype=pc.dtype, device=pc.device)
+            pc_with_idx = torch.cat([pc, idx_col], dim=1)
+            all_pc_with_idx.append(pc_with_idx)
+
+        sampled_pc = torch.cat(all_pc_with_idx, dim=0)
         return farthest_point_sampling(sampled_pc, num_points)
 
     def get_canonical_q(self):

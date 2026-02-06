@@ -5,6 +5,7 @@ dataset:
     - 'allegro'
     - 'barrett'
     - 'shadowhand'
+    - 'leaphand'
   debug_object_names: null
   batch_size: 16
   num_workers: 8
@@ -25,6 +26,7 @@ model:
     barrett: 10
     allegro: 21
     shadowhand: 17
+    leaphand: 17
   bps_config:
     bps_type: 'random_uniform'
     n_bps_points: 124
@@ -54,6 +56,7 @@ model:
     - 'allegro'
     - 'barrett'
     - 'shadowhand'
+    - 'leaphand'
   mode: 'train'
   loss_config:
     trans_weight: 1.0
@@ -61,14 +64,14 @@ model:
 
 train:
   lr: 1.0e-4
-  epochs: 300
+  epochs: 600
   lr_step: 20
   lr_gamma: 0.8
   save_interval: 10
-  save_dir: 'graph_exp/diff_v3'
+  save_dir: 'graph_exp/diff_v3_basl'
   project_name: 'trograsp-fm'
-  experiment_name: 'diff_v3'
-  resume_from: null
+  experiment_name: 'diff_v3_basl'
+  resume_from: 'graph_exp/diff_v3_basl/ckpt/epoch=299.ckpt'
   pretrained_from: null
   gpus: 8
   gradient_clip_val: 1.0

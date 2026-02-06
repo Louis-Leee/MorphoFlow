@@ -1,9 +1,9 @@
 dataset:
   robot_names:
-    # - 'allegro'
-    # - 'barrett'
-    # - 'shadowhand'
-    - 'leaphand'
+    - 'allegro'
+    - 'barrett'
+    - 'shadowhand'
+    # - 'leaphand'
   debug_object_names: null
 
   batch_size: 16
@@ -24,7 +24,7 @@ model:
   robot_links:
     barrett: 10
     allegro: 21
-    # shadowhand: 17
+    shadowhand: 17
     leaphand: 17
   bps_config:
     bps_type: 'random_uniform'
@@ -57,8 +57,8 @@ model:
   embodiment:
     - 'allegro'
     - 'barrett'
-    # - 'shadowhand'
-    - 'leaphand'
+    - 'shadowhand'
+    # - 'leaphand'
   mode: "train"
   loss_config:
     trans_weight: 1.0
@@ -70,7 +70,7 @@ train:
   lr_step: 20
   lr_gamma: 0.8
   save_interval: 10
-  save_dir: 'graph_exp/tro_e'
+  save_dir: 'graph_exp/tro_3hand'
   project_name: 'trograsp-fm'
-  experiment_name: 'tro_e'
-  resume_from: false
+  experiment_name: 'tro_3hand'
+  resume_from: 'graph_exp/tro_3hand/ckpt/60.pth'
