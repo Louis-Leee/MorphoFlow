@@ -1,10 +1,22 @@
+seed: 42
+
 dataset:
-  robot_names:
+  dataset_path: 'data/CMapDataset_filtered/leaphand_all.pt'
+  gt_robot_names:
     - 'leaphand'
+  no_gt_robot_names:
+    - 'leaphand_graph_1'
+    - 'leaphand_graph_2'
+    - 'leaphand_morpho_1'
+    - 'leaphand_morpho_2'
+    - 'leaphand_morpho_3'
+    - 'leaphand_graph_morpho_1'
   debug_object_names: null
-  batch_size: 100
-  num_workers: 16
+  batch_size: 16
+  num_workers: 8
   object_pc_type: 'random'
+  no_gt_joint_range: [0.1, 0.9]
+  no_gt_q_noise_std: 0.1
 
 model:
   vqvae_cfg:
@@ -18,11 +30,6 @@ model:
   object_patch: 25
   max_link_node: 25
   robot_links:
-    barrett: 10
-    allegro: 21
-    shadowhand: 17
-    robotiq_3finger: 13
-    ezgripper: 5
     leaphand: 17
     leaphand_graph_1: 13
     leaphand_graph_2: 13
@@ -30,9 +37,6 @@ model:
     leaphand_morpho_2: 21
     leaphand_morpho_3: 14
     leaphand_graph_morpho_1: 14
-    xhand: 13
-  inference_config:
-    inference_mode: 'unconditioned'
   bps_config:
     bps_type: 'random_uniform'
     n_bps_points: 124
@@ -57,12 +61,8 @@ model:
     num_layers: 6
     v_out_hidden_dims: [256, 128]
     se3_out_dim: [3, 3]
+  inference_config: false
   embodiment:
-    - 'allegro'
-    - 'barrett'
-    - 'shadowhand'
-    - 'robotiq_3finger'
-    - 'ezgripper'
     - 'leaphand'
     - 'leaphand_graph_1'
     - 'leaphand_graph_2'
@@ -70,21 +70,33 @@ model:
     - 'leaphand_morpho_2'
     - 'leaphand_morpho_3'
     - 'leaphand_graph_morpho_1'
-    - 'xhand'
-  mode: 'test'
+  mode: 'train'
   loss_config:
     trans_weight: 1.0
     rot_weight: 1.0
   ce_config:
     p_uncond: 0.1
     no_gt_robot_names:
-      - 'leaphand'
+      - 'leaphand_graph_1'
+      - 'leaphand_graph_2'
+      - 'leaphand_morpho_1'
+      - 'leaphand_morpho_2'
+      - 'leaphand_morpho_3'
+      - 'leaphand_graph_morpho_1'
     guidance_scale: 1.5
     no_gt_loss_weight: 1.0
 
-test:
-  embodiment: 'leaphand'
-  ckpt: 'graph_exp/diff_v3_bas_l_ce_v2/ckpt/epoch=299.ckpt'
-  save_dir: 'graph_exp/diff_v3_ce/leaphand-unconditioned-test'
-  gpu: 0
-  split_batch_size: 100
+train:
+  lr: 1.0e-4
+  epochs: 700
+  lr_step: 20
+  lr_gamma: 0.8
+  save_interval: 10
+  save_dir: 'graph_exp/diff_v3_leaphand_7_ce_v2'
+  project_name: 'trograsp-fm'
+  experiment_name: 'diff_v3_leaphand_7_ce_v2'
+  resume_from: 'graph_exp/diff_v3_leaphand_7_ce_v2/ckpt/epoch=89.ckpt'
+  pretrained_from: null
+  gpus: 8
+  gradient_clip_val: 1.0
+  precision: 32

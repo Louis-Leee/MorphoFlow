@@ -153,6 +153,7 @@ class CEGraspDataModule(pl.LightningDataModule):
             object_pc_type=self.dataset_cfg.get('object_pc_type', 'random'),
             no_gt_joint_range=self.dataset_cfg.get('no_gt_joint_range', [0.1, 0.9]),
             no_gt_q_noise_std=self.dataset_cfg.get('no_gt_q_noise_std', 0.0),
+            dataset_path=self.dataset_cfg.get('dataset_path', None),
         )
         return torch.utils.data.DataLoader(
             dataset,

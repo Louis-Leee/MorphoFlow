@@ -26,6 +26,10 @@ model:
     leaphand: 17
     leaphand_graph_1: 13
     leaphand_graph_2: 13
+    leaphand_morpho_1: 13
+    leaphand_morpho_2: 21
+    leaphand_morpho_3: 14
+    leaphand_graph_morpho_1: 14
     robotiq_3finger: 13
     ezgripper: 5
     xhand: 13
@@ -68,6 +72,10 @@ model:
     - 'leaphand'
     - 'leaphand_graph_1'
     - 'leaphand_graph_2'
+    - 'leaphand_morpho_1'
+    - 'leaphand_morpho_2'
+    - 'leaphand_morpho_3'
+    - 'leaphand_graph_morpho_1'
     - 'robotiq_3finger'
     - 'ezgripper'
     - 'xhand'

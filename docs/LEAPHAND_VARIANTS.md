@@ -4,11 +4,15 @@ This document describes how to create LeapHand variants by removing or modifying
 
 ## Existing Variants
 
-| Variant | Missing Finger | Actuated Joints | DOF | Links |
-|---------|---------------|-----------------|-----|-------|
+| Variant | Modification | Actuated Joints | DOF | Links |
+|---------|-------------|-----------------|-----|-------|
 | leaphand | None | 16 (0-15) | 22 | 17 |
-| leaphand_graph_1 | Middle | 12 (0,1,2,3,8-15) | 18 | 13 |
-| leaphand_graph_2 | Index | 12 (4-15) | 18 | 13 |
+| leaphand_graph_1 | Middle finger removed | 12 (0,1,2,3,8-15) | 18 | 13 |
+| leaphand_graph_2 | Index finger removed | 12 (4-15) | 18 | 13 |
+| leaphand_morpho_1 | All DIP links removed (shortened fingers) | 12 (0,1,3,4,5,7,8,9,11,12,13,15) | 18 | 13 |
+| leaphand_morpho_2 | Extra DIP links added (elongated fingers) | 20 (0-3,2_1,4-7,6_1,8-11,10_1,12-15,14_1) | 26 | 21 |
+| leaphand_morpho_3 | Non-thumb DIP removed (shortened non-thumb) | 13 (0,1,3,4,5,7,8,9,11,12,13,14,15) | 19 | 14 |
+| leaphand_graph_morpho_1 | No index + elongated thumb | 13 (4-11,12,13,14,14_1,15) | 19 | 14 |
 
 ---
 
@@ -378,6 +382,238 @@ python vis_denoise.py --config config/vis_denoise.yaml
 
 ---
 
+## leaphand_morpho_1 (Shortened Fingers Variant)
+
+### Basic Parameters
+
+| Parameter | leaphand (original) | leaphand_morpho_1 |
+|-----------|---------------------|-------------------|
+| Actuated joints | 16 (0-15) | 12 (0,1,3,4,5,7,8,9,11,12,13,15) |
+| Total DOF (with virtual) | 22 | 18 |
+| robot_links | 17 | 13 |
+| Fingers | 4 (all present) | 4 (all present, shortened by one segment) |
+
+### Design
+
+Unlike graph_1/graph_2 which remove entire fingers, morpho_1 keeps all 4 fingers but **shortens each by removing the DIP link**. The fingertip joints (3, 7, 11, 15) are reconnected directly to the PIP links, using the original DIP joint origins. This tests whether the model can generalize to morphological changes.
+
+### Removed Components
+
+**Joints removed:** 2, 6, 10, 14 (DIP joints for all four fingers)
+
+**Links removed:**
+- `dip` - Index finger DIP
+- `dip_2` - Middle finger DIP
+- `dip_3` - Ring finger DIP
+- `thumb_dip` - Thumb DIP
+
+### Joint Reconnection
+
+When DIP links are removed, fingertip joints reconnect to PIP links with the DIP joint's origin:
+
+| Fingertip Joint | Old Parent | New Parent | New Origin (from old DIP joint) |
+|-----------------|-----------|------------|-------------------------------|
+| 3 (index) | dip | pip | xyz="0.015 0.0143 -0.013" rpy="1.57079 -1.57079 0" |
+| 7 (middle) | dip_2 | pip_2 | xyz="0.015 0.0143 -0.013" rpy="1.57079 -1.57079 0" |
+| 11 (ring) | dip_3 | pip_3 | xyz="0.015 0.0143 -0.013" rpy="1.57079 -1.57079 0" |
+| 15 (thumb) | thumb_dip | thumb_pip | xyz="0 0.0145 -0.017" rpy="-1.57079 0 0" |
+
+### FINGERTIP_JOINTS (R_origin handling)
+
+Because the reconnected joints have non-identity `rpy` origins, the angle extraction requires removing the R_origin offset:
+
+```python
+# Index/Middle/Ring: rpy="1.57079 -1.57079 0"
+R_origin = [[0,-1,0],[0,0,-1],[1,0,0]]
+
+# Thumb: rpy="-1.57079 0 0"
+R_origin = [[1,0,0],[0,0,1],[0,-1,0]]
+
+# Extract: R_joint = R_origin^T @ R_rel, angle = atan2(R_joint[1,0], R_joint[0,0])
+# predict_q[:, q_idx] = -angle  (negate for axis (0,0,-1))
+```
+
+```python
+'leaphand_morpho_1': {
+    ('pip', 'fingertip'): 8,            # Index: joint '3'
+    ('pip_2', 'fingertip_2'): 11,       # Middle: joint '7'
+    ('pip_3', 'fingertip_3'): 14,       # Ring: joint '11'
+    ('thumb_pip', 'thumb_fingertip'): 17,  # Thumb: joint '15'
+},
+```
+
+### Joint Order (pytorch-kinematics topological sort)
+
+```python
+hand = create_hand_model('leaphand_morpho_1')
+print(hand.get_joint_orders())
+# ['virtual_joint_x', 'virtual_joint_y', 'virtual_joint_z',
+#  'virtual_joint_roll', 'virtual_joint_pitch', 'virtual_joint_yaw',
+#  '1', '0', '3', '5', '4', '7', '9', '8', '11', '12', '13', '15']
+```
+
+### controller.py
+
+```python
+elif robot_name == 'leaphand_morpho_1':
+    if joint_name in ['13']:
+        return None
+    if joint_name in ['0', '4', '8']:  # X-axis MCP joints (all 4 fingers present)
+        link_dir = torch.tensor([1, 0, 0], dtype=torch.float32)
+    elif joint_name in ['1', '5', '9', '12']:  # Y-axis joints (no '14' - removed)
+        link_dir = torch.tensor([0, 1, 0], dtype=torch.float32)
+    else:
+        link_dir = torch.tensor([0, -1, 0], dtype=torch.float32)
+```
+
+---
+
+## leaphand_morpho_2 (Elongated Fingers Variant)
+
+### Basic Parameters
+
+| Parameter | leaphand (original) | leaphand_morpho_2 |
+|-----------|---------------------|-------------------|
+| Actuated joints | 16 (0-15) | 20 (0-15, 2_1, 6_1, 10_1, 14_1) |
+| Total DOF (with virtual) | 22 | 26 |
+| robot_links | 17 | 21 |
+| Fingers | 4 (all present) | 4 (all present, each elongated by one DIP segment) |
+
+### Design
+
+The inverse of morpho_1: instead of removing DIP links, morpho_2 **adds an extra DIP link** to each finger chain. This tests whether the model can generalize to longer fingers.
+
+### Added Components
+
+**New Joints:** 2_1, 6_1, 10_1, 14_1 (extra DIP joints for all four fingers)
+
+**New Links:**
+- `dip_1` - Index finger extra DIP (mesh: `dip.obj`)
+- `dip_2_1` - Middle finger extra DIP (mesh: `dip.obj`)
+- `dip_3_1` - Ring finger extra DIP (mesh: `dip.obj`)
+- `thumb_dip_1` - Thumb extra DIP (mesh: `thumb_dip.obj`)
+
+### Chain Changes
+
+Each finger chain has a new DIP link inserted between the existing DIP and the fingertip:
+
+| Finger | Original Chain | Morpho 2 Chain |
+|--------|---------------|----------------|
+| Index | pip → dip → fingertip | pip → dip → **dip_1** → fingertip |
+| Middle | pip_2 → dip_2 → fingertip_2 | pip_2 → dip_2 → **dip_2_1** → fingertip_2 |
+| Ring | pip_3 → dip_3 → fingertip_3 | pip_3 → dip_3 → **dip_3_1** → fingertip_3 |
+| Thumb | thumb_dip → thumb_fingertip | thumb_dip → **thumb_dip_1** → thumb_fingertip |
+
+### New Joint Properties
+
+| New Joint | Origin (from existing joint) | Limits (from existing joint) |
+|-----------|------------------------------|------------------------------|
+| 2_1 | j3: xyz="0 -0.0361 0.0002" rpy="0 0 0" | j2: [-0.506, 1.885] |
+| 6_1 | j7: xyz="0 -0.0361 0.0002" rpy="0 0 0" | j6: [-0.506, 1.885] |
+| 10_1 | j11: xyz="0 -0.03609 0.0002" rpy="0 0 0" | j10: [-0.506, 1.885] |
+| 14_1 | j15: xyz="0 0.0466 0.0002" rpy="0 0 0" | j14: [-1.20, 1.90] |
+
+### FINGERTIP_JOINTS
+
+Since joints 3/7/11 still have rpy="0 0 0" and joint 15 still has rpy="0 0 3.14159", the extraction uses the same logic as base leaphand (with `child == 'thumb_fingertip'` detection for the Rz(pi) offset).
+
+```python
+'leaphand_morpho_2': {
+    ('dip_1', 'fingertip'): 10,           # Index: joint '3' at index 10
+    ('dip_2_1', 'fingertip_2'): 15,       # Middle: joint '7' at index 15
+    ('dip_3_1', 'fingertip_3'): 20,       # Ring: joint '11' at index 20
+    ('thumb_dip_1', 'thumb_fingertip'): 25,  # Thumb: joint '15' at index 25
+},
+```
+
+### Joint Order (pytorch-kinematics topological sort)
+
+```python
+hand = create_hand_model('leaphand_morpho_2')
+print(hand.get_joint_orders())
+# ['virtual_joint_x', 'virtual_joint_y', 'virtual_joint_z',
+#  'virtual_joint_roll', 'virtual_joint_pitch', 'virtual_joint_yaw',
+#  '1', '0', '2', '2_1', '3', '5', '4', '6', '6_1', '7',
+#  '9', '8', '10', '10_1', '11', '12', '13', '14', '14_1', '15']
+```
+
+### controller.py
+
+```python
+elif robot_name == 'leaphand_morpho_2':
+    if joint_name in ['13']:
+        return None
+    if joint_name in ['0', '4', '8']:  # X-axis MCP joints
+        link_dir = torch.tensor([1, 0, 0], dtype=torch.float32)
+    elif joint_name in ['1', '5', '9', '12', '14']:  # Y-axis joints
+        link_dir = torch.tensor([0, 1, 0], dtype=torch.float32)
+    else:  # 2, 2_1, 3, 6, 6_1, 7, 10, 10_1, 11, 14_1, 15
+        link_dir = torch.tensor([0, -1, 0], dtype=torch.float32)
+```
+
+### Visualization Q Mapping
+
+Since morpho_2 has MORE DOF (26) than leaphand (22), the visualization script uses an "expand" mapping. Shared joints are mapped by name, and new joints (2_1, 6_1, 10_1, 14_1) copy values from their source joints (2, 6, 10, 14).
+
+---
+
+## leaphand_morpho_3 (Shortened Non-Thumb Fingers Variant)
+
+### Basic Parameters
+
+| Parameter | leaphand (original) | leaphand_morpho_3 |
+|-----------|--------------------|--------------------|
+| DOF | 22 (6 virtual + 16) | 19 (6 virtual + 13) |
+| Links | 17 | 14 |
+| Removed Joints | — | 2, 6, 10 |
+| Removed Links | — | dip, dip_2, dip_3 |
+
+### Key Difference from morpho_1
+
+morpho_3 is a hybrid of morpho_1 and base leaphand:
+- **Non-thumb fingers**: Same as morpho_1 — DIP removed, fingertip reparented to pip
+- **Thumb**: Unchanged from base leaphand — full length with thumb_dip
+
+### URDF Changes
+
+1. Remove links: `dip`, `dip_2`, `dip_3` (keep `thumb_dip`)
+2. Remove joints: `2`, `6`, `10` (keep `14`, `15`)
+3. Reparent joints 3, 7, 11: parent changes from dip → pip, origin `rpy="1.57079 -1.57079 0"`
+
+### Joint Order (pytorch-kinematics topological sort)
+
+```
+morpho_3 (19): [vx,vy,vz,vr,vp,vy, '1','0','3', '5','4','7', '9','8','11', '12','13','14','15']
+```
+
+### FINGERTIP_JOINTS
+
+```python
+'leaphand_morpho_3': {
+    ('pip', 'fingertip'): 8,              # Index (same as morpho_1)
+    ('pip_2', 'fingertip_2'): 11,         # Middle (same as morpho_1)
+    ('pip_3', 'fingertip_3'): 14,         # Ring (same as morpho_1)
+    ('thumb_dip', 'thumb_fingertip'): 18, # Thumb: q_idx=18 (NOT 17 like morpho_1!)
+}
+```
+
+### R_origin/R_offset Extraction (HYBRID)
+
+- **Non-thumb** (joints 3, 7, 11): `rpy="1.57079 -1.57079 0"` → `R_origin = [[0,-1,0],[0,0,-1],[1,0,0]]` (same as morpho_1)
+- **Thumb** (joint 15): `rpy="0 0 3.14159"` → `R_offset = [[-1,0,0],[0,-1,0],[0,0,1]]` (same as base leaphand)
+
+### Controller
+
+```python
+elif robot_name == 'leaphand_morpho_3':
+    if joint_name in ['13']: return None
+    if joint_name in ['0', '4', '8']: link_dir = [1, 0, 0]
+    elif joint_name in ['1', '5', '9', '12', '14']: link_dir = [0, 1, 0]  # includes '14'
+    else: link_dir = [0, -1, 0]
+```
+
+---
+
 ## Reference: LeapHand Finger Structure
 
 | Finger | Joints | Links |
@@ -410,3 +646,66 @@ Per-object breakdown:
 - ycb+pear: 34.0%
 - ycb+potted_meat_can: 3.0%
 - ycb+tomato_soup_can: 15.0%
+
+---
+
+## leaphand_graph_morpho_1 (No Index Finger + Elongated Thumb)
+
+### Basic Parameters
+
+| Parameter | leaphand (original) | leaphand_graph_morpho_1 |
+|-----------|---------------------|-------------------------|
+| Actuated joints | 16 (0-15) | 13 (4-11, 12-15, 14_1) |
+| Total DOF (with virtual) | 22 | 19 |
+| robot_links | 17 | 14 |
+| Fingers | 4 (index, middle, ring, thumb) | 3 (middle, ring, elongated thumb) |
+
+### Modification Summary
+
+Combines **graph_2** (no index finger) with **morpho_2** thumb elongation:
+
+**From graph_2 (removed):**
+- Joints: 0, 1, 2, 3 (index finger chain)
+- Links: mcp_joint, pip, dip, fingertip, extra_index_tip_head
+
+**From morpho_2 (added):**
+- Link: `thumb_dip_1` (uses thumb_dip.obj mesh)
+- Joint: `14_1` (parent=thumb_dip, child=thumb_dip_1, origin="0 0.0466 0.0002" rpy="0 0 0")
+- Joint `15` reparented: parent thumb_dip -> thumb_dip_1
+
+### Joint Order (pytorch-kinematics topological sort)
+
+```
+graph_morpho_1 (19): [vx,vy,vz,vr,vp,vy, '5','4','6','7', '9','8','10','11', '12','13','14','14_1','15']
+```
+
+### FINGERTIP_JOINTS
+
+```python
+'leaphand_graph_morpho_1': {
+    ('dip_2', 'fingertip_2'): 9,            # Middle finger
+    ('dip_3', 'fingertip_3'): 13,           # Ring finger
+    ('thumb_dip_1', 'thumb_fingertip'): 18, # Thumb (elongated chain)
+}
+```
+
+Only 3 fingertip joints (no index finger). Uses DEFAULT leaphand extraction (same as base leaphand, graph_2, morpho_2).
+
+### Q Mapping (from leaphand 22 DOF)
+
+Expand type: 19 DOF with 1 extra joint (`14_1`).
+- 18 shared joints mapped by name from leaphand
+- 1 copied joint: `14_1` copies value from joint `14` (via MORPHO_2_COPY_MAP)
+
+### Controller
+
+Based on graph_2: no joint '0' (index removed), adds '14_1' to the else group (Y-axis negative joints).
+
+### Files Modified
+
+- URDF: `data/data_urdf/robot/leaphand/leap_hand_right_extended_graph_morpho_1.urdf`
+- Metadata: `urdf_assets_meta.json`, `removed_links.json`, `palm_centric.py`
+- Configs: `test_diff_v3.yaml`, `test_diff_v3_ce.yaml`, `vis_denoise.yaml`, `train_diff_v3_ce_leaphand.yaml`
+- Code: `vis_denoise.py`, `test_diff_v3.py`, `test_diff_v3_ce.py`, `controller.py`
+- Visualization: `vis_leaphand_variants.py`
+- Dataset: `generate_variant_datasets.py`

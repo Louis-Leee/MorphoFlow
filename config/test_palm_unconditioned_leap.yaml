@@ -65,8 +65,8 @@ model:
 
 test:
   embodiment: "leaphand"
-  ckpt: "graph_exp/tro_l/ckpt/40.pth"
-  save_dir: "graph_exp/tro_l/leaphand-unconditioned-test"
+  ckpt: "graph_exp/tro_basl/ckpt/70.pth"
+  save_dir: "graph_exp/tro_basl/leaphand-unconditioned-test"
   gpu: 2
   split_batch_size: 100    # sample per split
   

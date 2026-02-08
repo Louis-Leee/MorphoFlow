@@ -67,6 +67,34 @@ FINGERTIP_JOINTS = {
         ('dip_3', 'fingertip_3'): 13,      # joint 11 -> q_idx 13
         ('thumb_dip', 'thumb_fingertip'): 17,  # joint 15 -> q_idx 17
     },
+    'leaphand_morpho_1': {
+        # Shortened fingers: DIP removed, fingertip connects to pip
+        # Joint origin rpy changed (non-identity R_origin) - handled in extraction
+        ('pip', 'fingertip'): 8,            # Index: joint '3' at index 8
+        ('pip_2', 'fingertip_2'): 11,       # Middle: joint '7' at index 11
+        ('pip_3', 'fingertip_3'): 14,       # Ring: joint '11' at index 14
+        ('thumb_pip', 'thumb_fingertip'): 17,  # Thumb: joint '15' at index 17
+    },
+    'leaphand_morpho_2': {
+        # Elongated fingers: extra DIP added, fingertip connects to dip_1/dip_2_1/etc.
+        ('dip_1', 'fingertip'): 10,           # Index: joint '3' at index 10
+        ('dip_2_1', 'fingertip_2'): 15,       # Middle: joint '7' at index 15
+        ('dip_3_1', 'fingertip_3'): 20,       # Ring: joint '11' at index 20
+        ('thumb_dip_1', 'thumb_fingertip'): 25,  # Thumb: joint '15' at index 25
+    },
+    'leaphand_morpho_3': {
+        # Shortened non-thumb fingers: DIP removed from index/middle/ring, thumb unchanged
+        ('pip', 'fingertip'): 8,              # Index: joint '3' at index 8
+        ('pip_2', 'fingertip_2'): 11,         # Middle: joint '7' at index 11
+        ('pip_3', 'fingertip_3'): 14,         # Ring: joint '11' at index 14
+        ('thumb_dip', 'thumb_fingertip'): 18, # Thumb: joint '15' at index 18
+    },
+    'leaphand_graph_morpho_1': {
+        # graph_2 base (no index) + morpho_2 thumb elongation (thumb_dip_1 + joint 14_1)
+        ('dip_2', 'fingertip_2'): 9,            # Middle: joint '7' at index 9
+        ('dip_3', 'fingertip_3'): 13,           # Ring: joint '11' at index 13
+        ('thumb_dip_1', 'thumb_fingertip'): 18, # Thumb: joint '15' at index 18
+    },
     'ezgripper': {
         # L2 joints are pure Y-axis rotation, extract from SE3 rotation
         ('left_ezgripper_finger_L1_1', 'left_ezgripper_finger_L2_1'): 7,
@@ -109,6 +137,8 @@ def extract_fingertip_joints(predict_q, transform_dict, robot_name):
     is_ezgripper = (robot_name == 'ezgripper')
     is_robotiq = (robot_name == 'robotiq_3finger')
     is_xhand = (robot_name == 'xhand')
+    is_morpho_1 = (robot_name == 'leaphand_morpho_1')
+    is_morpho_3 = (robot_name == 'leaphand_morpho_3')
 
     for (parent, child), q_idx in FINGERTIP_JOINTS[robot_name].items():
         if parent not in transform_dict or child not in transform_dict:
@@ -141,11 +171,53 @@ def extract_fingertip_joints(predict_q, transform_dict, robot_name):
                 # angle = atan2(R[2,1], R[1,1])
                 angle = torch.atan2(R_rel[:, 2, 1], R_rel[:, 1, 1])
             predict_q[:, q_idx] = angle
+        elif is_morpho_1:
+            # Morpho 1: shortened fingers, joint origin rpy changed
+            # Need to remove R_origin offset before extracting Z-axis rotation angle
+            is_thumb = (child == 'thumb_fingertip')
+            if is_thumb:
+                # Thumb: rpy="1.57079 0 3.14159" → Rx(-π/2)@Rz(π) → R_origin = [[-1,0,0],[0,0,1],[0,1,0]]
+                R_origin = torch.tensor([[-1, 0, 0], [0, 0, 1], [0, 1, 0]],
+                                        dtype=R_rel.dtype, device=R_rel.device)
+            else:
+                # Index/Middle/Ring: rpy="1.57079 -1.57079 0" → R_origin = [[0,-1,0],[0,0,-1],[1,0,0]]
+                R_origin = torch.tensor([[0, -1, 0], [0, 0, -1], [1, 0, 0]],
+                                        dtype=R_rel.dtype, device=R_rel.device)
+            # R_rel ≈ R_origin @ Rz(-θ), so R_joint = R_origin^T @ R_rel = Rz(-θ)
+            R_joint = torch.bmm(
+                R_origin.T.unsqueeze(0).expand(R_rel.shape[0], -1, -1),
+                R_rel
+            )
+            angle = torch.atan2(R_joint[:, 1, 0], R_joint[:, 0, 0])
+            # Negate because joint axis is (0, 0, -1)
+            predict_q[:, q_idx] = -angle
+        elif is_morpho_3:
+            # Morpho 3: shortened non-thumb fingers + full thumb (hybrid)
+            is_thumb = (child == 'thumb_fingertip')
+            if is_thumb:
+                # Thumb unchanged from base leaphand: rpy="0 0 3.14159" → Rz(π) offset
+                R_offset = torch.tensor([[-1, 0, 0], [0, -1, 0], [0, 0, 1]],
+                                        dtype=R_rel.dtype, device=R_rel.device)
+                R_joint_only = torch.bmm(
+                    R_offset.unsqueeze(0).expand(R_rel.shape[0], -1, -1).transpose(-1, -2),
+                    R_rel
+                )
+                angle = torch.atan2(R_joint_only[:, 1, 0], R_joint_only[:, 0, 0])
+            else:
+                # Non-thumb: rpy="1.57079 -1.57079 0" (same as morpho_1 non-thumb)
+                R_origin = torch.tensor([[0, -1, 0], [0, 0, -1], [1, 0, 0]],
+                                        dtype=R_rel.dtype, device=R_rel.device)
+                R_joint = torch.bmm(
+                    R_origin.T.unsqueeze(0).expand(R_rel.shape[0], -1, -1),
+                    R_rel
+                )
+                angle = torch.atan2(R_joint[:, 1, 0], R_joint[:, 0, 0])
+            predict_q[:, q_idx] = -angle
         else:
             # Leaphand: Z-axis rotation, axis=(0, 0, -1)
             # For Rz(θ): R[1,0] = sin(θ), R[0,0] = cos(θ)
-            # For thumb (q_idx=21): remove π offset in URDF origin before extracting angle
-            if q_idx == 21:  # thumb_fingertip has rpy="0 0 3.14159" offset
+            # For thumb: remove π offset in URDF origin before extracting angle
+            if child == 'thumb_fingertip':  # has rpy="0 0 3.14159" offset
                 R_offset = torch.tensor([[-1, 0, 0], [0, -1, 0], [0, 0, 1]],
                                         dtype=R_rel.dtype, device=R_rel.device)
                 R_joint_only = torch.bmm(

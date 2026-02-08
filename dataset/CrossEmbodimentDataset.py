@@ -41,6 +41,7 @@ class CrossEmbodimentDataset(Dataset):
         object_pc_type: str = 'random',
         no_gt_joint_range: list = None,
         no_gt_q_noise_std: float = 0.0,
+        dataset_path: str = None,
     ):
         self.batch_size = batch_size
         self.gt_robot_names = list(gt_robot_names)
@@ -69,7 +70,10 @@ class CrossEmbodimentDataset(Dataset):
             self.object_names = debug_object_names
 
         # GT metadata (only for GT robots)
-        dataset_path = os.path.join(ROOT_DIR, 'data/CMapDataset_filtered/cmap_full_dataset.pt')
+        if dataset_path is None:
+            dataset_path = os.path.join(ROOT_DIR, 'data/CMapDataset_filtered/cmap_full_dataset.pt')
+        elif not os.path.isabs(dataset_path):
+            dataset_path = os.path.join(ROOT_DIR, dataset_path)
         metadata = torch.load(dataset_path)['metadata']
         self.metadata = [m for m in metadata if m[1] in self.object_names and m[2] in self.gt_robot_set]
 
@@ -446,6 +450,7 @@ def create_ce_dataloader(cfg, is_train):
         object_pc_type=cfg.get('object_pc_type', 'random'),
         no_gt_joint_range=cfg.get('no_gt_joint_range', [0.1, 0.9]),
         no_gt_q_noise_std=cfg.get('no_gt_q_noise_std', 0.0),
+        dataset_path=cfg.get('dataset_path', None),
     )
     dataloader = DataLoader(
         dataset,

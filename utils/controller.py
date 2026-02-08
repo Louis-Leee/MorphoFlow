@@ -67,6 +67,46 @@ def get_link_dir(robot_name, joint_name):
             link_dir = torch.tensor([0, 1, 0], dtype=torch.float32)
         else:
             link_dir = torch.tensor([0, -1, 0], dtype=torch.float32)
+    elif robot_name == 'leaphand_morpho_1':
+        # LeapHand variant with shortened fingers (DIP links removed, all 4 fingers present)
+        if joint_name in ['13']:
+            return None
+        if joint_name in ['0', '4', '8']:  # X-axis MCP joints
+            link_dir = torch.tensor([1, 0, 0], dtype=torch.float32)
+        elif joint_name in ['1', '5', '9', '12']:  # Y-axis joints (no '14' - removed)
+            link_dir = torch.tensor([0, 1, 0], dtype=torch.float32)
+        else:
+            link_dir = torch.tensor([0, -1, 0], dtype=torch.float32)
+    elif robot_name == 'leaphand_morpho_2':
+        # LeapHand variant with elongated fingers (extra DIP links added, all 4 fingers present)
+        if joint_name in ['13']:
+            return None
+        if joint_name in ['0', '4', '8']:  # X-axis MCP joints
+            link_dir = torch.tensor([1, 0, 0], dtype=torch.float32)
+        elif joint_name in ['1', '5', '9', '12', '14']:  # Y-axis joints
+            link_dir = torch.tensor([0, 1, 0], dtype=torch.float32)
+        else:  # 2, 2_1, 3, 6, 6_1, 7, 10, 10_1, 11, 14_1, 15
+            link_dir = torch.tensor([0, -1, 0], dtype=torch.float32)
+    elif robot_name == 'leaphand_morpho_3':
+        # LeapHand variant with shortened non-thumb fingers (DIP removed, thumb full length)
+        if joint_name in ['13']:
+            return None
+        if joint_name in ['0', '4', '8']:  # X-axis MCP joints
+            link_dir = torch.tensor([1, 0, 0], dtype=torch.float32)
+        elif joint_name in ['1', '5', '9', '12', '14']:  # Y-axis joints (includes '14' — thumb kept)
+            link_dir = torch.tensor([0, 1, 0], dtype=torch.float32)
+        else:  # 3, 7, 11, 15
+            link_dir = torch.tensor([0, -1, 0], dtype=torch.float32)
+    elif robot_name == 'leaphand_graph_morpho_1':
+        # LeapHand variant: graph_2 (no index) + morpho_2 thumb elongation
+        if joint_name in ['13']:
+            return None
+        if joint_name in ['4', '8']:  # X-axis MCP joints (no '0' — index removed)
+            link_dir = torch.tensor([1, 0, 0], dtype=torch.float32)
+        elif joint_name in ['5', '9', '12', '14']:  # Y-axis joints
+            link_dir = torch.tensor([0, 1, 0], dtype=torch.float32)
+        else:  # 6, 7, 10, 11, 14_1, 15
+            link_dir = torch.tensor([0, -1, 0], dtype=torch.float32)
     elif robot_name == 'xhand':
         if joint_name in ['right_hand_thumb_bend_joint', 'right_hand_index_bend_joint']:
             return None
