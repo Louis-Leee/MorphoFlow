@@ -233,6 +233,124 @@ def extract_fingertip_joints(predict_q, transform_dict, robot_name):
     return predict_q
 
 
+# ── LeapHand tip mapping (use fixed joints instead of revolute for IK) ──
+# NOTE: thumb_fingertip is NOT included because extra_thumb_tip_head has Z offset
+# in the opposite direction (-0.015 vs +0.015 for other fingers)
+LEAPHAND_TIP_MAPPING = {
+    'fingertip': 'extra_index_tip_head',
+    'fingertip_2': 'extra_middle_tip_head',
+    'fingertip_3': 'extra_ring_tip_head',
+}
+
+# ── LeapHand Graph 1 tip mapping (no middle finger) ──
+LEAPHAND_GRAPH_1_TIP_MAPPING = {
+    'fingertip': 'extra_index_tip_head',
+    'fingertip_3': 'extra_ring_tip_head',
+    # No fingertip_2 (middle finger removed)
+}
+
+# ── LeapHand Graph 2 tip mapping (no index finger) ──
+LEAPHAND_GRAPH_2_TIP_MAPPING = {
+    'fingertip_2': 'extra_middle_tip_head',
+    'fingertip_3': 'extra_ring_tip_head',
+    # No fingertip (index finger removed)
+}
+
+# ── LeapHand per-link IK weights ──
+LEAPHAND_LINK_WEIGHTS = {
+    'palm_lower': 1.0,
+    'extra_ring_tip_head': 0.5,
+    'extra_middle_tip_head': 0.7,
+    'extra_index_tip_head': 0.8,
+    'thumb_fingertip': 0.8,
+}
+
+# ── LeapHand Graph 1 per-link IK weights (no middle finger) ──
+LEAPHAND_GRAPH_1_LINK_WEIGHTS = {
+    'palm_lower': 1.0,
+    'extra_ring_tip_head': 0.5,
+    'extra_index_tip_head': 0.8,
+    'thumb_fingertip': 0.8,
+    # No extra_middle_tip_head (middle finger removed)
+}
+
+# ── LeapHand Graph 2 per-link IK weights (no index finger) ──
+LEAPHAND_GRAPH_2_LINK_WEIGHTS = {
+    'palm_lower': 1.0,
+    'extra_ring_tip_head': 0.5,
+    'extra_middle_tip_head': 0.7,
+    'thumb_fingertip': 0.8,
+    # No extra_index_tip_head (index finger removed)
+}
+
+# ── LeapHand Morpho 1 tip mapping (shortened fingers, all 4 present) ──
+LEAPHAND_MORPHO_1_TIP_MAPPING = {
+    'fingertip': 'extra_index_tip_head',
+    'fingertip_2': 'extra_middle_tip_head',
+    'fingertip_3': 'extra_ring_tip_head',
+}
+
+# ── LeapHand Morpho 1 per-link IK weights ──
+LEAPHAND_MORPHO_1_LINK_WEIGHTS = {
+    'palm_lower': 1.0,
+    'extra_ring_tip_head': 0.5,
+    'extra_middle_tip_head': 0.7,
+    'extra_index_tip_head': 0.8,
+    'thumb_fingertip': 0.8,
+}
+
+# ── LeapHand Morpho 2 tip mapping (elongated fingers, all 4 present) ──
+LEAPHAND_MORPHO_2_TIP_MAPPING = {
+    'fingertip': 'extra_index_tip_head',
+    'fingertip_2': 'extra_middle_tip_head',
+    'fingertip_3': 'extra_ring_tip_head',
+}
+
+# ── LeapHand Morpho 2 per-link IK weights ──
+LEAPHAND_MORPHO_2_LINK_WEIGHTS = {
+    'palm_lower': 1.0,
+    'extra_ring_tip_head': 0.5,
+    'extra_middle_tip_head': 0.7,
+    'extra_index_tip_head': 0.8,
+    'thumb_fingertip': 0.8,
+}
+
+# ── LeapHand Morpho 3 tip mapping (shortened non-thumb, full thumb) ──
+LEAPHAND_MORPHO_3_TIP_MAPPING = {
+    'fingertip': 'extra_index_tip_head',
+    'fingertip_2': 'extra_middle_tip_head',
+    'fingertip_3': 'extra_ring_tip_head',
+}
+
+# ── LeapHand Morpho 3 per-link IK weights ──
+LEAPHAND_MORPHO_3_LINK_WEIGHTS = {
+    'palm_lower': 1.0,
+    'extra_ring_tip_head': 0.5,
+    'extra_middle_tip_head': 0.7,
+    'extra_index_tip_head': 0.8,
+    'thumb_fingertip': 0.8,
+}
+
+# ── LeapHand Graph Morpho 1 tip mapping (no index, elongated thumb) ──
+LEAPHAND_GRAPH_MORPHO_1_TIP_MAPPING = {
+    'fingertip_2': 'extra_middle_tip_head',
+    'fingertip_3': 'extra_ring_tip_head',
+    # No fingertip (index finger removed)
+}
+
+# ── LeapHand Graph Morpho 1 per-link IK weights ──
+LEAPHAND_GRAPH_MORPHO_1_LINK_WEIGHTS = {
+    'palm_lower': 1.0,
+    'extra_ring_tip_head': 0.5,
+    'extra_middle_tip_head': 0.7,
+    'thumb_fingertip': 0.8,
+    # No extra_index_tip_head (index finger removed)
+}
+
+# ── LeapHand locked joints (keep at initial value during IK) ──
+LEAPHAND_LOCKED_JOINTS = []
+
+
 # ── Pretty terminal output ──────────────────────────────────────────────
 
 BOLD = "\033[1m"
@@ -562,10 +680,40 @@ def test(config, hand_overrides=None, ckpt_override=None, gpu_override=None):
         urdf_path = robot_urdf_meta["urdf_path"][hand_name]
         target_links = list(hand.links_pc.keys())
 
-        # Apply hand-specific IK configurations
+        # Apply LeapHand tip mapping, weights, and locked joints
         ik_target_links = target_links
         link_weights = None
         locked_joints = None
+        if hand_name.startswith('leaphand'):
+            # Select config based on specific variant
+            if hand_name == 'leaphand':
+                tip_mapping = LEAPHAND_TIP_MAPPING
+                link_weights_config = LEAPHAND_LINK_WEIGHTS
+            elif hand_name == 'leaphand_graph_1':
+                tip_mapping = LEAPHAND_GRAPH_1_TIP_MAPPING
+                link_weights_config = LEAPHAND_GRAPH_1_LINK_WEIGHTS
+            elif hand_name == 'leaphand_graph_2':
+                tip_mapping = LEAPHAND_GRAPH_2_TIP_MAPPING
+                link_weights_config = LEAPHAND_GRAPH_2_LINK_WEIGHTS
+            elif hand_name == 'leaphand_morpho_1':
+                tip_mapping = LEAPHAND_MORPHO_1_TIP_MAPPING
+                link_weights_config = LEAPHAND_MORPHO_1_LINK_WEIGHTS
+            elif hand_name == 'leaphand_morpho_2':
+                tip_mapping = LEAPHAND_MORPHO_2_TIP_MAPPING
+                link_weights_config = LEAPHAND_MORPHO_2_LINK_WEIGHTS
+            elif hand_name == 'leaphand_morpho_3':
+                tip_mapping = LEAPHAND_MORPHO_3_TIP_MAPPING
+                link_weights_config = LEAPHAND_MORPHO_3_LINK_WEIGHTS
+            elif hand_name == 'leaphand_graph_morpho_1':
+                tip_mapping = LEAPHAND_GRAPH_MORPHO_1_TIP_MAPPING
+                link_weights_config = LEAPHAND_GRAPH_MORPHO_1_LINK_WEIGHTS
+            else:
+                # Unknown variant, use empty config
+                tip_mapping = {}
+                link_weights_config = {}
+            ik_target_links = [tip_mapping.get(link, link) for link in target_links]
+            link_weights = [link_weights_config.get(link, 1.0) for link in ik_target_links]
+            locked_joints = LEAPHAND_LOCKED_JOINTS
 
         ik_solver = PyrokiRetarget(
             urdf_path, ik_target_links,
