@@ -11,6 +11,7 @@ Supports all model variants via model_type config field:
   - diff_v3:   RobotGraphV3 (diffusion + FlashAttention, no edge)
   - fm_v2:     FlowMatchingV2 (FM + FlashAttention)
   - diff_v3_ce: RobotGraphV3CE (cross-embodiment, supports no_object mode)
+  - diff_v4_ce_vae: RobotGraphV4CE (cross-embodiment, TripoSG VAE link embeddings)
 
 Usage:
     python vis_denoise.py --config config/vis_denoise.yaml
@@ -47,6 +48,7 @@ MODEL_REGISTRY = {
     "fm_v2": ("model.flow_matching_v2", "FlowMatchingV2"),
     "fm_v3": ("model.flow_matching_v3", "FlowMatchingV3"),
     "diff_v3_ce": ("model.tro_graph_v3_ce", "RobotGraphV3CE"),
+    "diff_v4_ce_vae": ("model.tro_graph_v4_ce", "RobotGraphV4CE"),
 }
 
 

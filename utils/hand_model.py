@@ -37,9 +37,11 @@ class HandModel:
             links_pc_data = torch.load(links_pc_path, map_location=device)
             self.links_pc = links_pc_data['filtered']
             self.links_pc_original = links_pc_data['original']
+            self.links_pc_normal = links_pc_data.get('normal', None)
         else:
             self.links_pc = None
             self.links_pc_original = None
+            self.links_pc_normal = None
 
         self.meshes = load_link_geometries(robot_name, self.urdf_path, self.pk_chain.get_link_names())
 
@@ -238,12 +240,16 @@ class HandModel:
 def create_hand_model(
     robot_name,
     device=torch.device('cuda' if torch.cuda.is_available() else 'cpu'),
-    num_points=512
+    num_points=512,
+    pc_type='default',
 ):
     json_path = os.path.join(ROOT_DIR, 'data/data_urdf/robot/urdf_assets_meta.json')
     urdf_assets_meta = json.load(open(json_path))
     urdf_path = os.path.join(ROOT_DIR, urdf_assets_meta['urdf_path'][robot_name])
     meshes_path = os.path.join(ROOT_DIR, urdf_assets_meta['meshes_path'][robot_name])
-    links_pc_path = os.path.join(ROOT_DIR, f'data/PointCloud/robot/{robot_name}.pt')
+    if pc_type == '512_uniform':
+        links_pc_path = os.path.join(ROOT_DIR, f'data/PointCloud_512_uniform/robot/{robot_name}.pt')
+    else:
+        links_pc_path = os.path.join(ROOT_DIR, f'data/PointCloud/robot/{robot_name}.pt')
     hand_model = HandModel(robot_name, urdf_path, meshes_path, links_pc_path, device, num_points)
     return hand_model
