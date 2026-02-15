@@ -1,12 +1,10 @@
 dataset:
   robot_names:
-    - 'barrett'
-
+    - 'allegro'
   debug_object_names: null
-
-  batch_size: 100  # sample per object
+  batch_size: 100
   num_workers: 16
-  object_pc_type: 'random'  # 'fixed', 'random', 'partial'
+  object_pc_type: 'random'
 
 model:
   vqvae_cfg:
@@ -23,56 +21,58 @@ model:
     barrett: 10
     allegro: 21
     shadowhand: 17
-    robotiq_3finger: 13
-    ezgripper: 5
     leaphand: 17
     xhand: 13
+    robotiq_3finger: 13
+    ezgripper: 5
   inference_config:
-    inference_mode: 'unconditioned'  # unconditioned, palm_conditioned
-  bps_config:
-    bps_type: 'random_uniform'
-    n_bps_points: 124
-    radius: 1.0
-    n_dims: 3
+    inference_mode: 'unconditioned'
+  vae_config:
+    pretrained_model: 'VAST-AI/TripoSG'
+    subfolder: 'vae'
+    latent_channels: 64
+    link_embed_dim: 128
   N_t_training: 10
   diffusion_config:
     scheduling: linear
     M: 1000
     beta_min: 0.0001
     beta_max: 0.02
-    ddim_steps: 20
+    ddim_steps: 100
     ddim_eta: 1.0
     lambda: 0.2
   denoiser_config:
     t_embed_dim: 200
     V_object_dims: [3, 1, 64]
     V_robot_dims: [3, 3, 128]
-    E_or_dims: [3, 3]
-    E_rr_dims: [3, 3]
     v_conv_dim: 384
-    e_conv_dim: 384
+    num_heads: 16
+    ffn_dim: 1536
     num_layers: 6
-    c_atten_head: 32
     v_out_hidden_dims: [256, 128]
-    e_out_hidden_dims: [256, 128]
     se3_out_dim: [3, 3]
   embodiment:
     - 'allegro'
     - 'barrett'
     - 'shadowhand'
     - 'leaphand'
+    - 'xhand'
     - 'robotiq_3finger'
     - 'ezgripper'
-    - 'xhand'
-  mode: "test"
+  mode: 'test'
   loss_config:
     trans_weight: 1.0
     rot_weight: 1.0
+  ce_config:
+    p_uncond: 0.1
+    no_gt_robot_names:
+      - 'barrett'
+    guidance_scale: 1.5
+    no_gt_loss_weight: 1.0
 
 test:
-  embodiment: "barrett"
-  ckpt: "graph_exp/tro_basrelx/ckpt/30.pth"
-  save_dir: "graph_exp/tro_basrelx/barrett-unconditioned-test"
-  gpu: 2
-  split_batch_size: 100    # sample per split
-  
+  embodiment: 'allegro'
+  ckpt: 'graph_exp/diff_v5_as_b_ce_v2_vae/ckpt/epoch=299.ckpt'
+  save_dir: 'graph_exp/diff_v5_as_b_ce_v2_vae/test'
+  gpu: 0
+  split_batch_size: 100

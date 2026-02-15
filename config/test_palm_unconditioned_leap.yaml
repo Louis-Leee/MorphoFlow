@@ -23,7 +23,10 @@ model:
     barrett: 10
     allegro: 21
     shadowhand: 17
+    robotiq_3finger: 13
+    ezgripper: 5
     leaphand: 17
+    xhand: 13
   inference_config:
     inference_mode: 'unconditioned'  # unconditioned, palm_conditioned
   bps_config:
@@ -58,6 +61,9 @@ model:
     - 'barrett'
     - 'shadowhand'
     - 'leaphand'
+    - 'robotiq_3finger'
+    - 'ezgripper'
+    - 'xhand'
   mode: "test"
   loss_config:
     trans_weight: 1.0
@@ -65,8 +71,8 @@ model:
 
 test:
   embodiment: "leaphand"
-  ckpt: "graph_exp/tro_basl/ckpt/70.pth"
-  save_dir: "graph_exp/tro_basl/leaphand-unconditioned-test"
+  ckpt: "graph_exp/tro_basrelx/ckpt/30.pth"
+  save_dir: "graph_exp/tro_basrelx/leaphand-unconditioned-test"
   gpu: 2
   split_batch_size: 100    # sample per split
   

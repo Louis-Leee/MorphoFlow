@@ -1,10 +1,22 @@
+seed: 42
+
 dataset:
-  robot_names:
+  gt_robot_names:
     - 'allegro'
+    - 'barrett'
+    - 'shadowhand'
+  no_gt_robot_names:
+    - 'leaphand'
+    - 'allegro'
+    - 'barrett'
+    - 'shadowhand'
+  no_gt_split_json_path: 'data/CMapDataset_filtered/split_train_validate_objects_no_gt.json'
   debug_object_names: null
-  batch_size: 100
-  num_workers: 16
+  batch_size: 64
+  num_workers: 8
   object_pc_type: 'random'
+  no_gt_joint_range: [0.1, 0.9]
+  no_gt_q_noise_std: 0.1
 
 model:
   vqvae_cfg:
@@ -23,15 +35,16 @@ model:
     shadowhand: 17
     leaphand: 17
     xhand: 13
-    robotiq_3finger: 13
-    ezgripper: 5
-  inference_config:
-    inference_mode: 'unconditioned'
+  link_feature_type: 'vae'
   vae_config:
     pretrained_model: 'VAST-AI/TripoSG'
     subfolder: 'vae'
     latent_channels: 64
     link_embed_dim: 128
+  bps_config:
+    n_bps_points: 124
+    radius: 1.0
+    n_dims: 3
   N_t_training: 10
   diffusion_config:
     scheduling: linear
@@ -45,35 +58,47 @@ model:
     t_embed_dim: 200
     V_object_dims: [3, 1, 64]
     V_robot_dims: [3, 3, 128]
+    E_or_dims: [3, 3]
+    E_rr_dims: [3, 3]
     v_conv_dim: 384
     num_heads: 16
     ffn_dim: 1536
-    num_layers: 6
+    num_layers: 8
+
     v_out_hidden_dims: [256, 128]
     se3_out_dim: [3, 3]
+  inference_config: false
   embodiment:
     - 'allegro'
     - 'barrett'
     - 'shadowhand'
     - 'leaphand'
     - 'xhand'
-    - 'robotiq_3finger'
-    - 'ezgripper'
-  mode: 'test'
+  mode: 'train'
   loss_config:
     trans_weight: 1.0
     rot_weight: 1.0
   ce_config:
-    p_uncond: 0.1
+    p_uncond: 0.2
     no_gt_robot_names:
       - 'leaphand'
-      - 'xhand'
+      - 'allegro'
+      - 'barrett'
+      - 'shadowhand'
     guidance_scale: 1.5
     no_gt_loss_weight: 1.0
 
-test:
-  embodiment: 'allegro'
-  ckpt: 'graph_exp/diff_v4_bas_l_ce_v2_vae/ckpt/epoch=589.ckpt'
-  save_dir: 'graph_exp/diff_v4_bas_l_ce_v2_vae/test'
-  gpu: 0
-  split_batch_size: 100
+train:
+  lr: 1.0e-4
+  epochs: 700
+  lr_step: 20
+  lr_gamma: 0.8
+  save_interval: 10
+  save_dir: 'graph_exp/diff_v6_ce_vae'
+  project_name: 'trograsp-fm'
+  experiment_name: 'diff_v6_ce_vae'
+  resume_from: null
+  pretrained_from: null
+  gpus: 8
+  gradient_clip_val: 1.0
+  precision: 32

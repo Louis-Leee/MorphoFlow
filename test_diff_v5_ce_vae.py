@@ -1,24 +1,24 @@
 """
-Cross-Embodiment Diffusion V4 (VAE) evaluation script.
+Cross-Embodiment Diffusion V5 (VAE) evaluation script.
 
 Uses RobotGraphV4CE with classifier-free guidance at inference.
 Supports batch evaluation across multiple robot hands from a single config.
 
 Usage:
     # Single hand (backward compatible)
-    python test_diff_v4_ce_vae.py --config config/test_diff_v4_ce_vae.yaml
+    python test_diff_v5_ce_vae.py --config config/test_diff_v5_ce_vae.yaml
 
     # Multiple hands via CLI
-    python test_diff_v4_ce_vae.py --config config/test_diff_v4_ce_vae.yaml \
+    python test_diff_v5_ce_vae.py --config config/test_diff_v5_ce_vae.yaml \
         --hands allegro barrett shadowhand leaphand
 
     # Override checkpoint and GPU
-    python test_diff_v4_ce_vae.py --config config/test_diff_v4_ce_vae.yaml \
+    python test_diff_v5_ce_vae.py --config config/test_diff_v5_ce_vae.yaml \
         --hands allegro barrett shadowhand leaphand \
         --ckpt graph_exp/diff_v4_bas_l_ce_vae/ckpt/epoch=299.ckpt --gpu 0
 
     # Use JAX on CPU to save GPU memory for IK:
-    JAX_PLATFORM_NAME=cpu python test_diff_v4_ce_vae.py --config config/test_diff_v4_ce_vae.yaml
+    JAX_PLATFORM_NAME=cpu python test_diff_v5_ce_vae.py --config config/test_diff_v5_ce_vae.yaml
 """
 
 import os
@@ -766,12 +766,12 @@ def test(config, hand_overrides=None, ckpt_override=None, gpu_override=None):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Cross-Embodiment Diffusion V4 (VAE) evaluation (single or batch multi-hand)"
+        description="Cross-Embodiment Diffusion V5 (VAE) evaluation (single or batch multi-hand)"
     )
     parser.add_argument(
         "--config",
         type=str,
-        default="config/test_diff_v4_ce_vae.yaml",
+        default="config/test_diff_v5_ce_vae.yaml",
         help="Base config file",
     )
     parser.add_argument(

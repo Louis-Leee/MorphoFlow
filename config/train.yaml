@@ -3,10 +3,13 @@ dataset:
     - 'allegro'
     - 'barrett'
     - 'shadowhand'
-    # - 'leaphand'
+    - 'robotiq_3finger'
+    - 'ezgripper'
+    - 'leaphand'
+    # - 'xhand'
   debug_object_names: null
 
-  batch_size: 16
+  batch_size: 24
   num_workers: 8
   object_pc_type: 'random'  # 'fixed', 'random', 'partial'
 
@@ -25,7 +28,10 @@ model:
     barrett: 10
     allegro: 21
     shadowhand: 17
+    robotiq_3finger: 13
+    ezgripper: 5
     leaphand: 17
+    xhand: 13
   bps_config:
     bps_type: 'random_uniform'
     n_bps_points: 124
@@ -58,7 +64,11 @@ model:
     - 'allegro'
     - 'barrett'
     - 'shadowhand'
-    # - 'leaphand'
+    - 'robotiq_3finger'
+    - 'ezgripper'
+    - 'leaphand'
+    # - 'xhand'
+
   mode: "train"
   loss_config:
     trans_weight: 1.0
@@ -70,7 +80,7 @@ train:
   lr_step: 20
   lr_gamma: 0.8
   save_interval: 10
-  save_dir: 'graph_exp/tro_3hand'
+  save_dir: 'graph_exp/tro_basrel'
   project_name: 'trograsp-fm'
-  experiment_name: 'tro_3hand'
-  resume_from: 'graph_exp/tro_3hand/ckpt/60.pth'
+  experiment_name: 'tro_basrel'
+  resume_from: null

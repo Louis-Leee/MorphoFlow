@@ -2,13 +2,15 @@ seed: 42
 
 dataset:
   gt_robot_names:
-    # - 'allegro'
+    - 'allegro'
     - 'barrett'
     - 'shadowhand'
-  no_gt_robot_names:
-    - 'allegro'
-    # - 'leaphand'
+    - 'leaphand'
+    - 'ezgripper'
+    - 'robotiq_3finger'
     # - 'xhand'
+  no_gt_robot_names: []
+    # - 'barrett'
   debug_object_names: null
   batch_size: 16
   num_workers: 8
@@ -31,8 +33,10 @@ model:
     barrett: 10
     allegro: 21
     shadowhand: 17
+    robotiq_3finger: 13
+    ezgripper: 5
     leaphand: 17
-    xhand: 13
+    # xhand: 14
   vae_config:
     pretrained_model: 'VAST-AI/TripoSG'
     subfolder: 'vae'
@@ -63,16 +67,17 @@ model:
     - 'barrett'
     - 'shadowhand'
     - 'leaphand'
-    - 'xhand'
+    - 'robotiq_3finger'
+    - 'ezgripper'
+    # - 'xhand'
   mode: 'train'
   loss_config:
     trans_weight: 1.0
     rot_weight: 1.0
   ce_config:
     p_uncond: 0.1
-    no_gt_robot_names:
-      - 'barrett'
-      # - 'xhand'
+    no_gt_robot_names: []
+      # - 'barrett'
     guidance_scale: 1.5
     no_gt_loss_weight: 1.0
 
@@ -82,9 +87,9 @@ train:
   lr_step: 20
   lr_gamma: 0.8
   save_interval: 10
-  save_dir: 'graph_exp/diff_v4_bs_a_ce_v2_vae'
+  save_dir: 'graph_exp/diff_v4_baslre_v2_vae_check'
   project_name: 'trograsp-fm'
-  experiment_name: 'diff_v4_bs_a_ce_v2_vae'
+  experiment_name: 'diff_v4_baslre_v2_vae_check'
   resume_from: null
   pretrained_from: null
   gpus: 8

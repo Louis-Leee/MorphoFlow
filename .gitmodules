@@ -1,3 +1,6 @@
 [submodule "third_party/tripo_sg"]
 	path = third_party/tripo_sg
 	url = https://github.com/JDScript/TripoSG.git
+[submodule "third_party/chamferdist"]
+	path = third_party/chamferdist
+	url = https://github.com/krrish94/chamferdist.git
