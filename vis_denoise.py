@@ -6,10 +6,8 @@ point cloud pose changes across denoising steps using viser.
 
 Supports all model variants via model_type config field:
   - original:  RobotGraph (diffusion + GraphDenoiser)
-  - fm:        FlowMatchingRobotGraph
   - diff_v2:   RobotGraphV2 (diffusion + FlashAttention)
   - diff_v3:   RobotGraphV3 (diffusion + FlashAttention, no edge)
-  - fm_v2:     FlowMatchingV2 (FM + FlashAttention)
   - diff_v3_ce: RobotGraphV3CE (cross-embodiment, supports no_object mode)
   - diff_v4_ce_vae: RobotGraphV4CE (cross-embodiment, TripoSG VAE link embeddings)
 
@@ -42,11 +40,8 @@ sys.path.append(ROOT_DIR)
 # ---- Model registry: model_type → (module_path, class_name) ----
 MODEL_REGISTRY = {
     "original": ("model.tro_graph", "RobotGraph"),
-    "fm": ("model.flow_matching_graph", "FlowMatchingRobotGraph"),
     "diff_v2": ("model.tro_graph_v2", "RobotGraphV2"),
     "diff_v3": ("model.tro_graph_v3", "RobotGraphV3"),
-    "fm_v2": ("model.flow_matching_v2", "FlowMatchingV2"),
-    "fm_v3": ("model.flow_matching_v3", "FlowMatchingV3"),
     "diff_v3_ce": ("model.tro_graph_v3_ce", "RobotGraphV3CE"),
     "diff_v4_ce_vae": ("model.tro_graph_v4_ce", "RobotGraphV4CE"),
 }
@@ -91,8 +86,7 @@ def build_model(config, device):
     model_cfg = OmegaConf.to_container(config.model, resolve=True)
 
     # Filter config to only include params accepted by this model class,
-    # so a single config can contain keys for multiple model types
-    # (e.g. both flow_matching_config and diffusion_config).
+    # so a single config can contain keys for multiple model types.
     sig = inspect.signature(ModelClass.__init__)
     valid_params = set(sig.parameters.keys()) - {"self"}
     has_var_keyword = any(

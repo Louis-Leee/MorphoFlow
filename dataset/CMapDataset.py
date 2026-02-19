@@ -178,6 +178,7 @@ class CMapDataset(Dataset):
             hand = self.hands[robot_name]
             initial_q_batch = torch.zeros([self.batch_size, hand.dof], dtype=torch.float32)
             object_pc_batch = torch.zeros([self.batch_size, self.num_points, 3], dtype=torch.float32)
+            object_normal_batch = torch.zeros([self.batch_size, self.num_points, 3], dtype=torch.float32)
             robot_links_pc_batch = []
             initial_se3_batch = []
             for batch_idx in range(self.batch_size):
@@ -189,19 +190,24 @@ class CMapDataset(Dataset):
                 if self.object_pc_type == 'partial':
                     indices = torch.randperm(65536)[:self.num_points * 2]
                     object_pc = self.object_pcs[object_name][indices]
+                    object_normal = self.object_normals[object_name][indices]
                     direction = torch.randn(3)
                     direction = direction / torch.norm(direction)
                     proj = object_pc @ direction
-                    _, indices = torch.sort(proj)
-                    indices = indices[self.num_points:]
-                    object_pc = object_pc[indices]
+                    _, sort_indices = torch.sort(proj)
+                    sort_indices = sort_indices[self.num_points:]
+                    object_pc = object_pc[sort_indices]
+                    object_normal = object_normal[sort_indices]
                 else:
                     name = object_name.split('+')
                     object_path = os.path.join(ROOT_DIR, f'data/PointCloud/object/{name[0]}/{name[1]}.pt')
-                    object_pc = torch.load(object_path)[:, :3]
+                    object_data = torch.load(object_path)
+                    object_pc = object_data[:, :3]
+                    object_normal = object_data[:, 3:6] if object_data.shape[1] >= 6 else torch.zeros_like(object_pc)
 
                 initial_q_batch[batch_idx] = initial_q
                 object_pc_batch[batch_idx] = object_pc
+                object_normal_batch[batch_idx] = object_normal
 
             B, N, DOF = self.batch_size, self.num_points, len(hand.pk_chain.get_joint_parameter_names())
             assert initial_q_batch.shape == (B, DOF), \
@@ -215,6 +221,7 @@ class CMapDataset(Dataset):
                 'initial_q': initial_q_batch,
                 'initial_se3': torch.stack(initial_se3_batch, dim=0),
                 'object_pc': object_pc_batch,
+                'object_pc_normal': object_normal_batch,
                 'robot_links_pc': robot_links_pc_batch
             }
 

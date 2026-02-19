@@ -34,7 +34,7 @@ class HandModel:
         self.pk_chain = pk.build_chain_from_urdf(open(urdf_path).read()).to(dtype=torch.float32, device=device)
         self.dof = len(self.pk_chain.get_joint_parameter_names())
         if os.path.exists(links_pc_path):  # In case of generating robot links pc, the file doesn't exist.
-            links_pc_data = torch.load(links_pc_path, map_location=device)
+            links_pc_data = torch.load(links_pc_path, map_location=device, weights_only=False)
             self.links_pc = links_pc_data['filtered']
             self.links_pc_original = links_pc_data['original']
             self.links_pc_normal = links_pc_data.get('normal', None)
@@ -54,6 +54,63 @@ class HandModel:
             self.vertices[link_name] = v
 
         self.frame_status = None
+
+        key_points_json_path = os.path.join(os.path.dirname(self.urdf_path), "key_points.json")
+        dis_key_points_json_path = os.path.join(os.path.dirname(self.urdf_path), "dis_key_points.json")
+        try:
+            with open(key_points_json_path, "r", encoding="utf-8") as f:
+                self.keypoints = json.load(f)
+            with open(dis_key_points_json_path, "r", encoding="utf-8") as f:
+                self.dis_keypoints = json.load(f)
+        except FileNotFoundError:
+            self.keypoints = None
+            self.dis_keypoints = None
+
+    def get_keypoints(self, q=None):
+        """
+        Get the keypoints of the robot given joint values q.
+
+        :param q: (6 + DOF,), joint values (euler representation)
+        :return: keypoints
+        """
+        if self.keypoints is None:
+            return []
+        if q is None:
+            q = torch.zeros(self.dof, dtype=torch.float32, device=self.device)
+        self.update_status(q)
+
+        keypoints = [
+            self.frame_status[link_name].transform_points(
+                torch.tensor(self.keypoints[link_name], dtype=torch.float32, device=self.device)
+            )
+            for link_name in self.keypoints
+            if len(self.keypoints[link_name]) > 0
+        ]
+
+        return keypoints
+
+    def get_dis_keypoints(self, q=None):
+        """
+        Get the keypoints of the robot given joint values q.
+
+        :param q: (6 + DOF,), joint values (euler representation)
+        :return: keypoints
+        """
+        if self.dis_keypoints is None:
+            return []
+        if q is None:
+            q = torch.zeros(self.dof, dtype=torch.float32, device=self.device)
+        self.update_status(q)
+
+        dis_keypoints = [
+            self.frame_status[link_name].transform_points(
+                torch.tensor(self.dis_keypoints[link_name], dtype=torch.float32, device=self.device)
+            )
+            for link_name in self.dis_keypoints
+            if len(self.dis_keypoints[link_name]) > 0
+        ]
+
+        return dis_keypoints
 
     def get_joint_orders(self):
         return [joint.name for joint in self.pk_chain.get_joints()]

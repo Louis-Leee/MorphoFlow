@@ -50,6 +50,7 @@ class RobotGraphV4CE(nn.Module):
         loss_config,
         mode="train",
         ce_config=None,
+        object_encoder_type="vqvae",
     ):
         super(RobotGraphV4CE, self).__init__()
 
@@ -86,6 +87,12 @@ class RobotGraphV4CE(nn.Module):
         )
         self._vae_config = vae_config
 
+        # ---- Object encoder type ----
+        self.object_encoder_type = object_encoder_type
+        if object_encoder_type == "triposg_vae":
+            assert object_patch <= 50, \
+                f"object_patch={object_patch} too large for TripoSG VAE (max 50 from 512 input)"
+
         # ---- Diffusion schedule ----
         self.N_t_training = N_t_training
         if isinstance(diffusion_config, dict):
@@ -98,6 +105,11 @@ class RobotGraphV4CE(nn.Module):
             if not isinstance(denoiser_config, dict)
             else denoiser_config
         )
+        # Auto-override V_object_dims for TripoSG VAE object encoding
+        if object_encoder_type == "triposg_vae":
+            denoiser_dict["V_object_dims"] = [self.vae_latent_dim, 1]
+        self.V_object_dims = denoiser_dict["V_object_dims"]
+
         self.denoiser = FlashAttentionDenoiserNoEdge(
             M=diffusion_config["M"],
             object_patch=self.object_patch,
@@ -213,11 +225,15 @@ class RobotGraphV4CE(nn.Module):
             link_embedding_dict[embodiment] = latent
             print(f"  {embodiment}: {latent.shape[0]} links, latent dim {latent.shape[1]}")
 
-        # Free the VAE from GPU memory
-        del vae
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-        print("TripoSG VAE link embeddings computed and cached.")
+        # Keep or free the VAE depending on object encoder type
+        if self.object_encoder_type == "triposg_vae":
+            self.object_vae = vae  # keep for online object encoding
+            print("TripoSG VAE kept loaded for object encoding.")
+        else:
+            del vae
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            print("TripoSG VAE link embeddings computed and cached.")
 
         return link_embedding_dict
 
@@ -251,6 +267,36 @@ class RobotGraphV4CE(nn.Module):
         scale, _ = torch.max(scale, dim=2, keepdim=True)
         pc = pc / scale
         return pc, centroids, scale
+
+    @torch.no_grad()
+    def _encode_object_vae(self, normal_pc, object_pc_normal, scale):
+        """Encode object PC with TripoSG VAE (same encoder as link embeddings).
+
+        Args:
+            normal_pc: [B, 512, 3] normalized object positions
+            object_pc_normal: [B, 512, 3] surface normals
+            scale: [B, 1, 1] normalization scale
+        Returns:
+            object_nodes: [B, object_patch, vae_latent_dim + 1]
+        """
+        B = normal_pc.shape[0]
+        device = normal_pc.device
+
+        vae_input = torch.cat([normal_pc, object_pc_normal], dim=-1)  # [B, 512, 6]
+        flat = vae_input.reshape(-1, 6).to(device, dtype=torch.float16)
+
+        _, posterior = self.object_vae.encode_shape(
+            flat, num_tokens=self.object_patch, batch_size=B
+        )
+        latent = posterior.mode().float()  # [B * object_patch, vae_latent_dim]
+        latent = latent.reshape(B, self.object_patch, -1)  # [B, P, 64]
+
+        object_nodes = torch.cat([
+            latent,
+            scale.expand(-1, self.object_patch, -1),
+        ], dim=-1)  # [B, P, 65]
+
+        return object_nodes
 
     def _expand_and_reshape_(self, x, name):
         shape = x.shape
@@ -298,16 +344,23 @@ class RobotGraphV4CE(nn.Module):
         # ---- Object nodes ----
         with torch.no_grad():
             normal_pc, centroids, scale = self._normalize_pc_(object_pc)
-            object_tokens = self.vqvae.encode(normal_pc)
 
-        object_nodes = torch.cat(
-            [
-                object_tokens["xyz"],
-                scale.expand(-1, self.object_patch, -1),
-                object_tokens["z_q"],
-            ],
-            dim=-1,
-        )  # [B, P, 68]
+        if self.object_encoder_type == "triposg_vae":
+            object_pc_normal = batch.get("object_pc_normal", torch.zeros_like(object_pc))
+            if object_pc_normal.device != device:
+                object_pc_normal = object_pc_normal.to(device)
+            object_nodes = self._encode_object_vae(normal_pc, object_pc_normal, scale)
+        else:
+            with torch.no_grad():
+                object_tokens = self.vqvae.encode(normal_pc)
+            object_nodes = torch.cat(
+                [
+                    object_tokens["xyz"],
+                    scale.expand(-1, self.object_patch, -1),
+                    object_tokens["z_q"],
+                ],
+                dim=-1,
+            )  # [B, P, 68]
 
         # ---- CFG dropout: with p_uncond, replace object nodes with zeros ----
         use_uncond = random.random() < self.p_uncond
@@ -399,8 +452,8 @@ class RobotGraphV4CE(nn.Module):
 
         # ---- Dummy object nodes (zeros — model sees no object features) ----
         dummy_object_nodes = torch.zeros(
-            [B, self.object_patch, sum([3, 1, 64])], device=device, dtype=dtype
-        )  # 68-dim to match VQ-VAE output
+            [B, self.object_patch, sum(self.V_object_dims)], device=device, dtype=dtype
+        )
 
         # ---- CFG dropout: same mechanism as GT path ----
         use_uncond = random.random() < self.p_uncond
@@ -520,24 +573,30 @@ class RobotGraphV4CE(nn.Module):
 
         if self.inference_mode == "no_object":
             object_nodes = torch.zeros(
-                [B, self.object_patch, 68], device=device, dtype=dtype
+                [B, self.object_patch, sum(self.V_object_dims)],
+                device=device, dtype=dtype,
             )
             return self._inference_unconditioned(
                 batch, object_nodes, centroids, scale,
                 B, device, dtype, link_names, valid_links,
             )
 
-        with torch.no_grad():
-            object_tokens = self.vqvae.encode(normal_pc)
-
-        object_nodes = torch.cat(
-            [
-                object_tokens["xyz"],
-                scale.expand(-1, self.object_patch, -1),
-                object_tokens["z_q"],
-            ],
-            dim=-1,
-        )
+        if self.object_encoder_type == "triposg_vae":
+            object_pc_normal = batch.get("object_pc_normal", torch.zeros_like(object_pc))
+            if object_pc_normal.device != device:
+                object_pc_normal = object_pc_normal.to(device)
+            object_nodes = self._encode_object_vae(normal_pc, object_pc_normal, scale)
+        else:
+            with torch.no_grad():
+                object_tokens = self.vqvae.encode(normal_pc)
+            object_nodes = torch.cat(
+                [
+                    object_tokens["xyz"],
+                    scale.expand(-1, self.object_patch, -1),
+                    object_tokens["z_q"],
+                ],
+                dim=-1,
+            )
 
         if self.inference_mode == "unconditioned":
             return self._inference_unconditioned(

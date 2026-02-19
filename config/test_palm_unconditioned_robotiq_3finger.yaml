@@ -67,8 +67,8 @@ model:
 
 test:
   embodiment: "robotiq_3finger"
-  ckpt: "graph_exp/tro_basrelx/ckpt/30.pth"
-  save_dir: "graph_exp/tro_basrelx/robotiq_3finger-unconditioned-test"
+  ckpt: "graph_exp/tro_basrel/ckpt/60.pth"
+  save_dir: "graph_exp/tro_basrel/robotiq_3finger-unconditioned-test"
   gpu: 2
   split_batch_size: 100    # sample per split
   

@@ -11,30 +11,28 @@ export CUDA_LAUNCH_BLOCKING=1
 export CUDA_VISIBLE_DEVICES=3  # 指定 GPU
 
 # ================= 2. 批量参数列表 =================
-echo "Wait... 正在评估: shadowhand"
-$PYTHON_EXEC test.py \
-  --config config/test_palm_unconditioned_shadow.yaml
+# echo "Wait... 正在评估: shadowhand"
+# $PYTHON_EXEC test.py \
+#   --config config/test_palm_unconditioned_shadow.yaml
 
-echo "Wait... 正在评估: allegro"
-$PYTHON_EXEC test.py \
-  --config config/test_palm_unconditioned_allegro.yaml
+# echo "Wait... 正在评估: allegro"
+# $PYTHON_EXEC test.py \
+#   --config config/test_palm_unconditioned_allegro.yaml
 
-echo "Wait... 正在评估: barrett"
-$PYTHON_EXEC test.py \
-  --config config/test_palm_unconditioned_barrett.yaml
+# echo "Wait... 正在评估: barrett"
+# $PYTHON_EXEC test.py \
+#   --config config/test_palm_unconditioned_barrett.yaml
 
-echo "Wait... 正在评估: leaphand"
-$PYTHON_EXEC test.py \
-  --config config/test_palm_unconditioned_leap.yaml
+# echo "Wait... 正在评估: leaphand"
+# $PYTHON_EXEC test.py \
+#   --config config/test_palm_unconditioned_leap.yaml
 
 echo "Wait... 正在评估: robotiq_3finger"
-$PYTHON_EXEC test_diff_v2.py \
+$PYTHON_EXEC test.py \
   --config config/test_palm_unconditioned_robotiq_3finger.yaml
 
 echo "Wait... 正在评估: ezgripper"
-$PYTHON_EXEC test_diff_v2.py \
+$PYTHON_EXEC test.py \
   --config config/test_palm_unconditioned_ezgripper.yaml  
-
-
 
 echo "🎉 所有任务执行完毕。"

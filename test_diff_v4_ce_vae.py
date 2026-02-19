@@ -502,6 +502,10 @@ def eval_single_hand(
                 "object_pc": object_pc,
                 "robot_links_pc": robot_links_pc,
             }
+            if "object_pc_normal" in batch:
+                split_batch["object_pc_normal"] = batch["object_pc_normal"][
+                    data_count : data_count + split_num
+                ].to(device)
             data_count += split_num
 
             time_start = time.time()
@@ -793,6 +797,19 @@ if __name__ == "__main__":
         default=None,
         help="Override GPU for Isaac Gym validation",
     )
-    args = parser.parse_args()
+    args, unknown = parser.parse_known_args()
     config = OmegaConf.load(args.config)
-    test(config, hand_overrides=args.hands, ckpt_override=args.ckpt, gpu_override=args.gpu)
+
+    # Collect OmegaConf dotlist overrides from both --hands list and trailing args
+    dotlist = [a for a in unknown if "=" in a]
+    hands = args.hands
+    if hands:
+        dotlist += [h for h in hands if "=" in h]
+        hands = [h for h in hands if "=" not in h]
+        if not hands:
+            hands = None
+    if dotlist:
+        overrides = OmegaConf.from_dotlist(dotlist)
+        config = OmegaConf.merge(config, overrides)
+
+    test(config, hand_overrides=hands, ckpt_override=args.ckpt, gpu_override=args.gpu)
