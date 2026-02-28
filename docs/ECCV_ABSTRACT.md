@@ -1,0 +1,6 @@
+\newcommand{\modelname}{\texttt{SOMO}\xspace}
+
+We present \modelname, a scalable framework for dexterous grasp generation that gracefully scales with an increasing number of robot hands — producing more generalizable and robust grasps as more embodiments are incorporated into training. 
+Unlike prior approaches that train hand-specific models, \modelname proposes a Morphology-Prior Diffusion model shared across all hands, enabled by three key designs. 
+First, \modelname reformulates grasping as a 3D assembly problem, predicting per-link SE(3) poses instead of joint angles, thereby decoupling grasp generation from hand-specific kinematics. Second, a 3D shape-aware VAE unifies link and object features into a shared geometric embedding across embodiments. Third, a classifier-free training strategy learns a morphology prior solely from valid hand configurations without any object-grasp annotations, enabling zero-shot transfer to novel robots given only a URDF and link point clouds. 
+\modelname achieves state-of-the-art grasp synthesis across six robot hands with diverse morphologies, exhibits consistent improvement as training hands scale up, and demonstrates strong zero-shot generalization to unseen hands. Our model and code will be released.

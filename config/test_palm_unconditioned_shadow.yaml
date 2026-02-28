@@ -71,8 +71,8 @@ model:
 
 test:
   embodiment: "shadowhand"
-  ckpt: "graph_exp/tro_basrelx/ckpt/30.pth"
-  save_dir: "graph_exp/tro_basrelx/shadowhand-unconditioned-test"
+  ckpt: "graph_exp/tro_basrelx_full/ckpt/10.pth"
+  save_dir: "graph_exp/tro_basrelx_full/shadowhand-unconditioned-test"
   gpu: 2
   split_batch_size: 100    # sample per split
   

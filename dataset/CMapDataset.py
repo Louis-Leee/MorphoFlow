@@ -45,7 +45,7 @@ class CMapDataset(Dataset):
             print("!!! Using debug objects !!!")
             self.object_names = debug_object_names
 
-        dataset_path = os.path.join(ROOT_DIR, f'data/CMapDataset_filtered/cmap_full_dataset.pt')
+        dataset_path = os.path.join(ROOT_DIR, f'data/CMapDataset_filtered/cmap_multidex_full2_dataset.pt')
         metadata = torch.load(dataset_path)['metadata']
         self.metadata = [m for m in metadata if m[1] in self.object_names and m[2] in self.robot_names]
         if not self.is_train:

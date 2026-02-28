@@ -67,8 +67,8 @@ model:
 
 test:
   embodiment: "ezgripper"
-  ckpt: "graph_exp/tro_basrel/ckpt/60.pth"
-  save_dir: "graph_exp/tro_basrel/ezgripper-unconditioned-test"
+  ckpt: "graph_exp/tro_basrelx_full/ckpt/10.pth"
+  save_dir: "graph_exp/tro_basrelx_full/ezgripper-unconditioned-test"
   gpu: 2
   split_batch_size: 100    # sample per split
   

@@ -1,15 +1,15 @@
 seed: 42
 
 dataset:
+  dataset_path: 'data/CMapDataset_filtered/leaphand_all.pt'
   gt_robot_names:
-    - 'allegro'
-    - 'barrett'
-    - 'shadowhand'
     - 'leaphand'
-    - 'ezgripper'
-    - 'robotiq_3finger'
-    - 'xhand'
-  no_gt_robot_names: []
+  no_gt_robot_names:
+    - 'leaphand_graph_1'
+    - 'leaphand_graph_2'
+    - 'leaphand_morpho_1'
+    - 'leaphand_morpho_2'
+    - 'leaphand_morpho_3'
     # - 'allegro'
     # - 'barrett'
     # - 'shadowhand'
@@ -37,13 +37,12 @@ model:
   object_patch: 50
   max_link_node: 25
   robot_links:
-    barrett: 10
-    allegro: 21
-    shadowhand: 17
-    robotiq_3finger: 13
-    ezgripper: 5
     leaphand: 17
-    xhand: 13
+    leaphand_graph_1: 13
+    leaphand_graph_2: 13
+    leaphand_morpho_1: 13
+    leaphand_morpho_2: 21
+    leaphand_morpho_3: 14
   vae_config:
     pretrained_model: 'VAST-AI/TripoSG'
     subfolder: 'vae'
@@ -70,27 +69,24 @@ model:
     se3_out_dim: [3, 3]
   inference_config: false
   embodiment:
-    - 'allegro'
-    - 'barrett'
-    - 'shadowhand'
     - 'leaphand'
-    - 'robotiq_3finger'
-    - 'ezgripper'
-    - 'xhand'
+    - 'leaphand_graph_1'
+    - 'leaphand_graph_2'
+    - 'leaphand_morpho_1'
+    - 'leaphand_morpho_2'
+    - 'leaphand_morpho_3'
   mode: 'train'
   loss_config:
     trans_weight: 1.0
     rot_weight: 1.0
   ce_config:
     p_uncond: 0.1
-    no_gt_robot_names: []
-      # - 'allegro'
-      # - 'barrett'
-      # - 'shadowhand'
-      # - 'leaphand'
-      # - 'ezgripper'
-      # - 'robotiq_3finger'
-      # - 'xhand'
+    no_gt_robot_names: 
+      - 'leaphand_graph_1'
+      - 'leaphand_graph_2'
+      - 'leaphand_morpho_1'
+      - 'leaphand_morpho_2'
+      - 'leaphand_morpho_3'
     guidance_scale: 1.5
     no_gt_loss_weight: 1.0
 
@@ -100,11 +96,11 @@ train:
   lr_step: 20
   lr_gamma: 0.8
   save_interval: 10
-  save_dir: 'graph_exp/diff_v4_baslrex_v2_vae_obj_vae50_full2'
+  save_dir: 'graph_exp/diff_v4_leap_variant_v2_vae_obj_vae50'
   project_name: 'trograsp-fm'
-  experiment_name: 'diff_v4_baslrex_v2_vae_obj_vae50_full2'
-  resume_from: null
+  experiment_name: 'diff_v4_leap_variant_v2_vae_obj_vae50'
+  resume_from: 'graph_exp/diff_v4_leap_variant_v2_vae_obj_vae50/ckpt/epoch=99.ckpt'
   pretrained_from: null
-  gpus: 7
+  gpus: 8
   gradient_clip_val: 1.0
   precision: 32

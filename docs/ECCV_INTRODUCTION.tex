@@ -1,0 +1,67 @@
+% =============================================================
+% ECCV Introduction — SOMO
+% =============================================================
+% Prerequisites: \newcommand{\modelname}{\texttt{SOMO}\xspace}
+% Citations needed (placeholders):
+%   - Object-centric: li2023gendexgrasp, chen2024multihandgrasp,
+%     liu2023contactgen, jiang2021graspTTA
+%   - Interaction-centric: chen2024dro (D(R,O)), chen2024tro (T(R,O))
+%   - Hand-specific: xu2023unidexgrasp, wan2023unidexgrasp++
+%   - Diffusion models: ho2020denoising, song2020denoising
+%   - Classifier-free guidance: ho2022classifierfree
+%   - TripoSG: triposg
+% =============================================================
+
+\section{Introduction}
+\label{sec:intro}
+
+Dexterous grasping is a fundamental capability for achieving precise, human-level manipulation.
+Yet, generating grasps for \emph{any} robot hand---from a two-fingered gripper to a twenty-one-link anthropomorphic hand---remains an open problem.
+While individual hands can be addressed by dedicated models, the growing diversity of robotic end-effectors demands a \emph{cross-embodiment} solution: a single generative model that synthesizes high-quality grasps across morphologically distinct hands.
+
+Existing learning-based approaches to cross-embodiment dexterous grasping can be broadly categorized into two paradigms.
+%
+\textbf{Object-centric methods}~\cite{li2023gendexgrasp,chen2024multihandgrasp,liu2023contactgen} describe grasps in terms of object-surface features such as contact maps or affordance fields.
+By grounding the representation in object geometry, these approaches naturally promote transferability across different hands and object shapes.
+However, they are often brittle under partial observations and typically require an additional optimization stage---such as solving fingertip inverse kinematics or fitting predicted contact maps under penetration-free and joint-limit constraints---to convert abstract predictions into feasible joint configurations, making the pipeline computationally expensive and difficult to scale.
+%
+\textbf{Interaction-centric methods} move beyond pure object-surface descriptions by jointly modeling the spatial relationship between the hand and the object.
+D(R,\,O) Grasp~\cite{chen2024dro} pioneered this direction, constructing a distance matrix between points sampled on the hand and the object surface to embed both entities in a shared interaction space.
+This formulation retains embodiment awareness while capturing transferable object-level features, facilitating generalization across both hands and objects.
+However, the point-to-point feature maps in D(R,\,O) demand substantial GPU memory, making the representation resource-intensive and difficult to scale.
+Moreover, it relies on a suitable initial configuration, rendering performance sensitive to initialization quality.
+T(R,\,O) Grasp~\cite{chen2024tro} addresses these limitations by replacing the dense distance matrix with a heterogeneous graph of SE(3) transforms between robot links and object patches, coupled with a graph diffusion model that generates grasps from pure noise without requiring initialization.
+While T(R,\,O) demonstrates strong results on individual hands, it trains a separate model per embodiment, inheriting the fundamental scalability bottleneck: every new hand requires its own paired object-grasp dataset and its own training run, with no knowledge transfer between hands.
+
+We argue that a truly scalable framework for cross-embodiment dexterous grasping must satisfy two key properties.
+First, it should employ a \emph{unified representation} that naturally accommodates hands with heterogeneous kinematic structures---varying numbers of joints, link topologies, and coupling constraints---within a single generative model, without any per-hand architectural components.
+Second, its performance should \emph{scale positively} with the number of training embodiments: adding more hands to the training pool should improve---or at the very least preserve---grasp quality for every individual hand, rather than degrading it through interference.
+
+We present \modelname, a Morphology-Prior Diffusion model that realizes both properties through three synergistic designs---each enabling the next.
+%
+\textbf{(i)~Grasping as 3D assembly.}
+Rather than predicting hand-specific joint angles, \modelname decomposes each robot hand into its constituent rigid links and predicts a per-link SE(3) pose.
+A valid grasp becomes an arrangement of rigid pieces around the target object---akin to assembling a 3D puzzle---with kinematic feasibility enforced only \emph{after} generation through inverse kinematics.
+Because the generative model operates on variable-length sets of SE(3) tokens rather than fixed-dimensional joint vectors, a single transformer-based denoiser can natively process embodiments ranging from 5-link grippers to 21-link anthropomorphic hands without any architecture modification.
+This kinematics-agnostic representation is what makes the next two designs possible.
+%
+\textbf{(ii)~Shared 3D shape-aware encoding.}
+A frozen pretrained 3D VAE encodes both object point clouds and individual link meshes into a common geometric latent space using the same encoder weights.
+Object tokens capture local surface geometry through spatially distributed patch embeddings; morphology-aware link embeddings encode each link's shape, size, and contact surface.
+This shared space lets the denoiser reason about how a link's geometry complements the local object surface, and maps novel link geometries into the same embedding space as known hands.
+%
+\textbf{(iii)~Classifier-free training with a morphology prior.}
+We extend the classifier-free guidance paradigm~\cite{ho2022classifierfree} beyond its original label-dropping formulation: the unconditional path is trained on a distinct \emph{morphology-prior distribution} that captures physically valid hand poses through forward-kinematic self-exploration, without any object-grasp annotations.
+At inference, both signals are composed via guided denoising, enabling annotation-free grasp synthesis for hands that participated \emph{only} in the morphology prior path.
+
+Extensive experiments demonstrate that \modelname achieves state-of-the-art grasp synthesis across six robot hands spanning diverse morphologies, from 2-finger grippers to 21-link anthropomorphic hands.
+We observe a clear positive \emph{scaling effect}: across all evaluated hands, per-hand grasp quality improves as the number of co-training embodiments increases, confirming that cross-embodiment diversity is a benefit rather than a compromise.
+Furthermore, \modelname produces functional grasps for entirely new hands---given only a URDF and link meshes, with no object-grasp annotations---demonstrating strong annotation-free generalization.
+
+\noindent In summary, our contributions are:
+\begin{enumerate}
+    \item We reformulate cross-embodiment grasp generation as a \emph{3D link-level assembly problem}, predicting per-link SE(3) poses in a kinematics-agnostic representation shared across hands of arbitrary topology---the enabling abstraction for a scalable, unified pipeline.
+    \item We introduce a \emph{shared 3D shape-aware encoding} via a frozen pretrained VAE that maps both object surfaces and robot link meshes into a common geometric latent space, enabling the denoiser to reason jointly about object and link geometry without domain-specific encoders.
+    \item We propose a \emph{classifier-free training paradigm} that learns a morphology prior from forward-kinematic self-exploration of valid hand configurations, enabling annotation-free transfer to novel robots given only a URDF and link point clouds.
+    \item We achieve \emph{state-of-the-art} grasp synthesis across six morphologically diverse hands and reveal a positive scaling effect---individual hand performance improves with training embodiment diversity---while also demonstrating annotation-free generalization to unseen hands.
+\end{enumerate}

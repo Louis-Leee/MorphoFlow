@@ -1,0 +1,170 @@
+% =============================================================
+% ECCV Method Section — SOMO
+% =============================================================
+% Prerequisites: \newcommand{\modelname}{\texttt{SOMO}\xspace}
+% Citations needed: peebles2023scalable (DiT/AdaLN-Zero),
+%   ho2020denoising (DDPM), song2020denoising (DDIM),
+%   ho2022classifierfree (CFG), triposg (TripoSG)
+% =============================================================
+
+\section{Method}
+\label{sec:method}
+
+Given an object point cloud and a robot embodiment specified by its URDF, \modelname generates per-link SE(3) grasping poses through a diffusion model shared across all hands.
+We describe our approach in three parts:
+Sec.~\ref{sec:morphology_prior_diffusion} introduces the overall architecture that reformulates grasping as 3D assembly of rigid links;
+Sec.~\ref{sec:shape_aware_encoding} presents a shared 3D VAE that encodes both object surfaces and link morphologies into a common geometric space;
+Sec.~\ref{sec:classifier_free} details the classifier-free training paradigm that learns a morphology prior from valid hand configurations, enabling zero-shot transfer to novel robots.
+
+% =============================================================
+\subsection{Morphology-Prior Diffusion}
+\label{sec:morphology_prior_diffusion}
+
+\noindent\textbf{Grasping as 3D assembly.}
+A key barrier to cross-embodiment grasp generation is that different hands have different kinematic structures: varying numbers of joints, link lengths, and coupling constraints.
+We sidestep this entirely by reformulating grasping as a \emph{3D assembly problem}.
+Given a robot hand with embodiment $e \in \mathcal{E}$, we parse its URDF into $L_e$ rigid links and seek to predict an SE(3) pose $T_l \in \mathrm{SE}(3)$ for every link $l = 1, \dots, L_e$.
+A valid grasp is then an arrangement of these rigid pieces around the object---akin to assembling a 3D puzzle---and the hand-specific kinematics are only consulted \emph{after} generation, via inverse kinematics, to recover joint angles.
+Because the generative model never sees joint angles, it operates in a representation that is shared across all embodiments by construction.
+
+\noindent\textbf{Input and output.}
+The model takes as input an object point cloud $\mathcal{O} = \{\mathbf{x}_i\}_{i=1}^{N}$ with associated normals, together with an embodiment identifier $e$.
+It produces per-link pose vectors $\mathbf{p}_l = [\mathbf{t}_l,\, \mathbf{r}_l] \in \mathbb{R}^6$, where $\mathbf{t}_l \in \mathbb{R}^3$ is the link translation and $\mathbf{r}_l \in \mathbb{R}^3$ is the axis-angle rotation, which together parameterize $T_l$.
+
+\noindent\textbf{Token representation.}
+We represent the object and robot hand as two sets of tokens fed into a shared denoiser.
+%
+\emph{Object tokens.}
+The point cloud $\mathcal{O}$ is encoded by a frozen 3D VAE into $P$ patch tokens $\mathbf{V}_O \in \mathbb{R}^{P \times d_O}$, capturing local surface geometry in a compact latent space (Sec.~\ref{sec:shape_aware_encoding}).
+%
+\emph{Robot tokens.}
+Each link $l$ is represented as
+\begin{equation}
+  \mathbf{V}_R^{(0)}[l] \;=\; \bigl[\,\tilde{\mathbf{t}}_l,\; \tilde{\mathbf{r}}_l,\; \mathbf{e}_l\,\bigr],
+  \label{eq:robot_token}
+\end{equation}
+where $\tilde{\mathbf{t}}_l = (\mathbf{t}_l - \mathbf{c}_O)/s_O$ is the translation normalized to the object-centric frame (with centroid $\mathbf{c}_O$ and scale $s_O$), $\tilde{\mathbf{r}}_l$ is the axis-angle rotation, and $\mathbf{e}_l \in \mathbb{R}^{d_\text{link}}$ is a \emph{morphology-aware link embedding} that encodes the 3D shape of link $l$ (Sec.~\ref{sec:shape_aware_encoding}).
+Since embodiments have different numbers of links, we pad all robot token sets to a shared maximum $L = \max_{e \in \mathcal{E}} L_e$ and introduce a binary validity mask $\mathbf{M} \in \{0,1\}^{L}$, where $\mathbf{M}_l = 1$ for real links and $0$ for padding.
+
+\noindent\textbf{Denoiser.}
+The denoiser $f_\theta$ is a 6-layer transformer with AdaLN-Zero~\cite{peebles2023scalable} conditioning on the diffusion timestep $m$.
+Each layer applies \emph{self-attention} among the robot tokens---enabling inter-link spatial reasoning---followed by \emph{cross-attention} from robot tokens to $\mathbf{V}_O$, which grounds generation in the target object geometry.
+Crucially, the cross-attention branch can be selectively \emph{disabled} during training, enabling classifier-free guidance over the object condition (Sec.~\ref{sec:classifier_free}).
+Two separate MLP heads decode the transformer output into translation noise $\hat{\boldsymbol{\epsilon}}_{\theta,l}^{\mathbf{t}}$ and rotation noise $\hat{\boldsymbol{\epsilon}}_{\theta,l}^{\mathbf{r}}$, reflecting the distinct statistics of translational and rotational perturbations.
+
+\noindent\textbf{Forward diffusion.}
+We apply a standard DDPM forward process~\cite{ho2020denoising} \emph{only to the pose components} $\mathbf{p}_l = [\tilde{\mathbf{t}}_l, \tilde{\mathbf{r}}_l]$; the morphology embedding $\mathbf{e}_l$ is concatenated unchanged at every step, serving as a persistent shape prior.
+The noisy pose at step $m$ is
+\begin{equation}
+  \mathbf{p}_l^{(m)} \;=\; \sqrt{\bar{\alpha}_m}\,\mathbf{p}_l^{(0)} \;+\; \sqrt{1 - \bar{\alpha}_m}\,\boldsymbol{\epsilon}_l, \qquad \boldsymbol{\epsilon}_l \sim \mathcal{N}(\mathbf{0}, \mathbf{I}),
+  \label{eq:forward_diffusion}
+\end{equation}
+where $\bar{\alpha}_m = \prod_{i=1}^{m} \alpha_i$ is the cumulative noise schedule.
+The training objective minimizes the masked mean-squared error over valid links:
+\begin{equation}
+  \mathcal{L} \;=\; \mathbb{E}_{m,\,\boldsymbol{\epsilon}}\!\left[\;\frac{\sum_{l=1}^{L}\, \mathbf{M}_l \,\bigl\|\boldsymbol{\epsilon}_l - \hat{\boldsymbol{\epsilon}}_{\theta,l}\bigr\|^2}{\sum_{l=1}^{L}\, \mathbf{M}_l}\;\right],
+  \label{eq:loss}
+\end{equation}
+where $\hat{\boldsymbol{\epsilon}}_{\theta,l} = [\hat{\boldsymbol{\epsilon}}_{\theta,l}^{\mathbf{t}},\, \hat{\boldsymbol{\epsilon}}_{\theta,l}^{\mathbf{r}}]$ is the noise predicted by $f_\theta$.
+
+\noindent\textbf{Inference.}
+At test time, we initialize all link poses from Gaussian noise and iteratively denoise via DDIM~\cite{song2020denoising}, steered by classifier-free guidance to balance grasp diversity and object fidelity (Sec.~\ref{sec:classifier_free}).
+
+% =============================================================
+\subsection{3D Shape-Aware Encoding}
+\label{sec:shape_aware_encoding}
+
+Cross-embodiment grasp generation demands a unified geometric representation that captures 3D shape information for both the target object and the diverse morphologies of robot links.
+Rather than learning separate encoders for each domain, we leverage a single pretrained 3D VAE---specifically, the encoder $\Phi^\text{VAE}$ from TripoSG~\cite{triposg}---as a shared feature extractor for both objects and links.
+This establishes a common geometric latent space in which object surfaces and link morphologies are directly comparable, providing the model with a \emph{morphology prior} that relates each link's contact geometry to the object surface.
+
+\noindent\textbf{Object encoding.}
+Given an object point cloud $\mathcal{O} = \{\mathbf{x}_i\}_{i=1}^N$ with surface normals $\{\mathbf{n}_i\}$, we first apply $L^\infty$ normalization:
+\begin{equation}
+    \hat{\mathcal{O}} = \frac{\mathcal{O} - \mathbf{c}_O}{s_O}, \quad s_O = \max_i \|\mathbf{x}_i - \mathbf{c}_O\|_\infty,
+\end{equation}
+where $\mathbf{c}_O$ is the centroid. The frozen encoder applies frequency-based positional embedding followed by farthest-point sampling to select $P$ representative patch tokens from the surface, yielding a posterior whose deterministic mode we take as the object latent:
+\begin{equation}
+    \mathbf{z}_O = \mu\!\left(\Phi^\text{VAE}(\hat{\mathcal{O}}, \mathbf{n}_O;\, P)\right) \in \mathbb{R}^{P \times d_\text{vae}}.
+\end{equation}
+To preserve absolute scale information---critical for grasp planning---we concatenate the normalization scale, producing the final object tokens:
+\begin{equation}
+    \mathbf{V}_O = \left[\,\mathbf{z}_O \;\|\; s_O \cdot \mathbf{1}_P\,\right] \in \mathbb{R}^{P \times (d_\text{vae}+1)}.
+\end{equation}
+
+\noindent\textbf{Link morphology embedding.}
+Each robot link $l$ is associated with a canonical point cloud $\mathcal{P}_l$ with normals, extracted from the URDF mesh. We apply $L^2$ unit-ball normalization:
+\begin{equation}
+    \hat{\mathcal{P}}_l = \frac{\mathcal{P}_l - \bar{\mathcal{P}}_l}{\max_i \|\mathcal{P}_{l,i} - \bar{\mathcal{P}}_l\|_2},
+\end{equation}
+where $\bar{\mathcal{P}}_l$ denotes the centroid. The same frozen encoder extracts a single-token latent ($P{=}1$), which a learnable two-layer MLP $\phi_\text{link}: \mathbb{R}^{d_\text{vae}} \to \mathbb{R}^{d_\text{link}}$ projects into the link embedding:
+\begin{equation}
+    \mathbf{e}_l = \phi_\text{link}\!\left(\mu\!\left(\Phi^\text{VAE}(\hat{\mathcal{P}}_l, \mathbf{n}_l;\, 1)\right)\right) \in \mathbb{R}^{d_\text{link}}.
+\end{equation}
+Because the link meshes are fixed for a given robot, these embeddings are \emph{pre-computed once} at initialization and cached as persistent buffers, incurring no overhead during training or inference.
+
+\noindent\textbf{Shared geometric space.}
+A \emph{single} pretrained encoder processes both object surfaces and link morphologies.
+The object tokens $\mathbf{V}_O$ capture manipulation-relevant surface geometry---curvature, concavities, graspable affordances---through $P$ spatially distributed patch embeddings.
+The link embeddings $\mathbf{e}_l$ encode the morphological \emph{identity} of each link: its shape, size, and contact surface.
+When the denoiser attends from robot tokens to object tokens, it reasons not only about \emph{where} to place each link but about \emph{how} that link's geometry complements the local object surface.
+Because $\Phi^\text{VAE}$ remains frozen throughout, the only learned parameters in this module are those of $\phi_\text{link}$, keeping the encoding stage parameter-efficient while inheriting the rich 3D priors of a large-scale pretrained model.
+
+% =============================================================
+\subsection{Classifier-Free Training Paradigm}
+\label{sec:classifier_free}
+
+Existing cross-embodiment grasp methods assume access to paired object-grasp annotations for every hand---a requirement that fundamentally limits scalability.
+Curating such datasets demands extensive simulation or teleoperation for each new embodiment, creating a bottleneck that grows linearly with the number of supported hands.
+We ask a more ambitious question: \emph{can a model learn to generate grasps for a novel robot given nothing more than its URDF and link meshes, without ever observing a single grasp demonstration?}
+
+We answer in the affirmative by introducing a classifier-free training paradigm that decomposes grasp generation into two complementary learning signals: an \emph{object-conditioned grasp distribution} trained on annotated data, and a \emph{morphology prior} learned purely from kinematic self-exploration.
+By unifying both under a single diffusion model via classifier-free guidance~\cite{ho2022classifierfree}, \modelname enables zero-shot grasp synthesis for unseen embodiments at inference time.
+
+\noindent\textbf{Object-conditioned path.}
+For hands with available grasp annotations, training follows the standard conditional diffusion objective.
+Given a paired tuple $(\mathcal{O}, \mathbf{x}_0, e)$ of object point cloud, ground-truth link poses, and embodiment, the model learns the conditional distribution $p(\mathbf{x} \mid \mathcal{O}, e)$ by predicting the noise added to $\mathbf{x}_0$.
+Object tokens $\mathbf{V}_O$ are encoded from $\mathcal{O}$ and attend to robot tokens through cross-attention.
+To support classifier-free guidance, we stochastically drop the object condition with probability $p_\text{uncond}$: the object tokens are replaced with zeros ($\mathbf{V}_O \leftarrow \mathbf{0}$) and cross-attention is disabled, exposing the model to the unconditional setting even for annotated hands.
+
+\noindent\textbf{Morphology prior path.}
+For hands \emph{without} any grasp annotations, we construct training data by sampling from the hand's configuration manifold.
+Concretely, we draw random joint configurations uniformly within the URDF-specified limits,
+\begin{equation}
+    \mathbf{q} \sim \mathrm{Uniform}(\mathbf{q}_{\min},\; \mathbf{q}_{\max}),
+\end{equation}
+and compute forward kinematics to obtain link poses $\{T_l\}_{l=1}^{L_e} = \mathrm{FK}(\mathbf{q})$.
+We optionally perturb joint angles with additive Gaussian noise, re-clamping to limits, to further diversify the sampled configurations.
+Since no object is involved, object tokens are zeroed ($\mathbf{V}_O = \mathbf{0}$) and cross-attention is disabled throughout.
+The diffusion objective remains identical---predicting noise added to valid link poses---but the learning signal is fundamentally different: rather than learning \emph{where to place links relative to an object}, the model learns \emph{what physically realizable configurations look like} for a given morphology.
+The self-attention layers among robot tokens capture the kinematic coupling between links---the coordinated spatial relationships that distinguish valid hand poses from arbitrary link arrangements.
+In effect, this path teaches the model hand anatomy.
+
+\noindent\textbf{Unified training.}
+Both paths share the same masked noise prediction loss (Eq.~\ref{eq:loss}) and are trained jointly.
+Let $\mathcal{L}_\text{GT}$ denote the loss over annotated data (with stochastic condition dropout) and $\mathcal{L}_\text{no-GT}$ the loss over sampled configurations. The overall objective is:
+\begin{equation}
+    \mathcal{L}_\text{total} = \mathcal{L}_{\text{GT}} + \lambda\, \mathcal{L}_{\text{no-GT}},
+    \label{eq:unified_loss}
+\end{equation}
+where $\lambda$ controls the relative weight of the morphology prior.
+Because the denoiser architecture, diffusion schedule, and loss are shared, the model builds a unified representation in which annotated and unannotated embodiments coexist.
+
+\noindent\textbf{Classifier-free guided inference.}
+At test time, we compose the learned morphology prior with object conditioning via two forward passes per denoising step:
+\begin{equation}
+    \hat{\boldsymbol{\epsilon}}_{\text{cfg}} = (1 - s)\,\hat{\boldsymbol{\epsilon}}_\theta(\mathbf{0},\, \mathbf{x}^{(m)},\, m) \;+\; s \cdot \hat{\boldsymbol{\epsilon}}_\theta(\mathbf{V}_O,\, \mathbf{x}^{(m)},\, m),
+    \label{eq:cfg_inference}
+\end{equation}
+where $s$ is the guidance scale.
+The unconditional pass provides the morphology prior---what valid configurations look like---while the conditional pass steers toward the specific object.
+When $s > 1$, guidance amplifies the object-specific component, producing tighter grasps while remaining anchored to physically valid poses.
+
+\noindent\textbf{Zero-shot transfer.}
+For a novel robot unseen during annotated training, the classifier-free formulation provides a natural generalization mechanism.
+The new hand participates only in the morphology prior path, learning valid configurations through random FK sampling.
+At inference, the cross-attention mechanism---trained across annotated embodiments to map object geometry to link placement---generalizes to the new hand via three synergistic factors:
+(i)~the shared VAE maps novel link geometries into the same embedding space as known hands;
+(ii)~self-attention layers, trained across diverse topologies, have learned embodiment-agnostic inter-link coordination;
+(iii)~cross-attention layers operate over the unified token space and transfer the learned object-to-link mapping.
+The morphology prior ensures generated poses respect the new hand's constraints, while object conditioning produces functional grasps---achieving synthesis without a single annotated demonstration.

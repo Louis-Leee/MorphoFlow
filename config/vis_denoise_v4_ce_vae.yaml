@@ -17,7 +17,8 @@ model:
     local_decode_pts: 40
     beta: 0.25
   vqvae_pretrain: 'ckpt/vqvae.ckpt'
-  object_patch: 25
+  object_encoder_type: triposg_vae
+  object_patch: 50
   max_link_node: 25
   robot_links:
     barrett: 10
@@ -71,11 +72,11 @@ model:
 
 vis:
   embodiment: 'allegro'
-  ckpt: 'graph_exp/diff_v4_bas_l_ce_v2_vae/ckpt/epoch=249.ckpt'
+  ckpt: 'graph_exp/diff_v4_basl_v2_vae_obj_vae50/ckpt/epoch=699.ckpt'
   split_batch_size: 100
   gpu: 0
   port: 8080
-  save_path: "outputs/vis_cache_v4_ce_v2_vae.pt"
+  save_path: "outputs/vis_cache_v4_vae_obj_vae50.pt"
   ik:
     mode: "baseline"
     force_recompute: true

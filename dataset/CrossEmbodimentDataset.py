@@ -48,6 +48,11 @@ class CrossEmbodimentDataset(Dataset):
         self.no_gt_robot_names = list(no_gt_robot_names) if no_gt_robot_names else []
         self.all_robot_names = self.gt_robot_names + self.no_gt_robot_names
         self.gt_robot_set = set(self.gt_robot_names)
+        self.robot_entries = []
+        for name in self.gt_robot_names:
+            self.robot_entries.append((name, 'gt'))
+        for name in self.no_gt_robot_names:
+            self.robot_entries.append((name, 'nogt'))
         self.is_train = is_train
         self.num_points = num_points
         self.object_pc_type = object_pc_type
@@ -71,7 +76,7 @@ class CrossEmbodimentDataset(Dataset):
 
         # GT metadata (only for GT robots)
         if dataset_path is None:
-            dataset_path = os.path.join(ROOT_DIR, 'data/CMapDataset_filtered/cmap_full_dataset.pt')
+            dataset_path = os.path.join(ROOT_DIR, 'data/CMapDataset_filtered/cmap_multidex_full2_dataset.pt')
         elif not os.path.isabs(dataset_path):
             dataset_path = os.path.join(ROOT_DIR, dataset_path)
         metadata = torch.load(dataset_path)['metadata']
@@ -420,8 +425,8 @@ class CrossEmbodimentDataset(Dataset):
 
     def __getitem__(self, index):
         if self.is_train:
-            robot_name = random.choice(self.all_robot_names)
-            if robot_name in self.gt_robot_set:
+            robot_name, mode = random.choice(self.robot_entries)
+            if mode == 'gt':
                 return self._get_gt_batch(robot_name)
             else:
                 return self._get_nogt_batch(robot_name)
@@ -431,7 +436,8 @@ class CrossEmbodimentDataset(Dataset):
 
     def __len__(self):
         if self.is_train:
-            return math.ceil(len(self.metadata) / self.batch_size)
+            nogt_count = sum(len(v) for v in self.nogt_metadata_by_robot.values())
+            return math.ceil((len(self.metadata) + nogt_count) / self.batch_size)
         else:
             return len(self.combination)
 

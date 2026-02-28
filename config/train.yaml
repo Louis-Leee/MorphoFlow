@@ -6,7 +6,7 @@ dataset:
     - 'robotiq_3finger'
     - 'ezgripper'
     - 'leaphand'
-    # - 'xhand'
+    - 'xhand'
   debug_object_names: null
 
   batch_size: 24
@@ -67,7 +67,7 @@ model:
     - 'robotiq_3finger'
     - 'ezgripper'
     - 'leaphand'
-    # - 'xhand'
+    - 'xhand'
 
   mode: "train"
   loss_config:
@@ -80,7 +80,7 @@ train:
   lr_step: 20
   lr_gamma: 0.8
   save_interval: 10
-  save_dir: 'graph_exp/tro_basrel'
+  save_dir: 'graph_exp/tro_basrelx_full'
   project_name: 'trograsp-fm'
-  experiment_name: 'tro_basrel'
+  experiment_name: 'tro_basrelx_full'
   resume_from: null

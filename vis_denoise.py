@@ -214,6 +214,10 @@ def run_inference(config, model, device):
                 "object_pc": object_pc,
                 "robot_links_pc": robot_links_pc,
             }
+            if "object_pc_normal" in batch:
+                split_batch["object_pc_normal"] = batch["object_pc_normal"][
+                    data_count : data_count + split_num
+                ].to(device)
             data_count += split_num
 
             with torch.no_grad():
