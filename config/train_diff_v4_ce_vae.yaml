@@ -5,15 +5,15 @@ dataset:
     - 'allegro'
     - 'barrett'
     - 'shadowhand'
-    - 'leaphand'
-    - 'ezgripper'
-    - 'robotiq_3finger'
-    - 'xhand'
-  no_gt_robot_names: []
+    # - 'leaphand'
+    # - 'ezgripper'
+    # - 'robotiq_3finger'
+    # - 'xhand'
+  no_gt_robot_names: 
     # - 'allegro'
     # - 'barrett'
     # - 'shadowhand'
-    # - 'leaphand'
+    - 'leaphand'
     # - 'ezgripper'
     # - 'robotiq_3finger'
     # - 'xhand'
@@ -21,8 +21,8 @@ dataset:
   batch_size: 128
   num_workers: 8
   object_pc_type: 'random'
-  no_gt_joint_range: [0.1, 0.9]
-  no_gt_q_noise_std: 0.1
+  no_gt_joint_range: [0.2, 0.9]
+  no_gt_q_noise_std: 0.2
 
 model:
   object_encoder_type: 'triposg_vae'  # 'vqvae' or 'triposg_vae'
@@ -82,12 +82,12 @@ model:
     trans_weight: 1.0
     rot_weight: 1.0
   ce_config:
-    p_uncond: 0.1
-    no_gt_robot_names: []
+    p_uncond: 0.2
+    no_gt_robot_names: 
       # - 'allegro'
       # - 'barrett'
       # - 'shadowhand'
-      # - 'leaphand'
+      - 'leaphand'
       # - 'ezgripper'
       # - 'robotiq_3finger'
       # - 'xhand'
@@ -100,11 +100,11 @@ train:
   lr_step: 20
   lr_gamma: 0.8
   save_interval: 10
-  save_dir: 'graph_exp/diff_v4_baslrex_v2_vae_obj_vae50_full2'
+  save_dir: 'graph_exp/diff_v4_bas_l_v2_vae_obj_vae50_check'
   project_name: 'trograsp-fm'
-  experiment_name: 'diff_v4_baslrex_v2_vae_obj_vae50_full2'
-  resume_from: null
+  experiment_name: 'diff_v4_bas_l_v2_vae_obj_vae50_check'
+  resume_from: 'graph_exp/diff_v4_bas_l_v2_vae_obj_vae50_check/ckpt/epoch=389.ckpt'
   pretrained_from: null
-  gpus: 7
+  gpus: 8
   gradient_clip_val: 1.0
   precision: 32

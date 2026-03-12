@@ -262,7 +262,7 @@ class HandModel:
         all_faces = np.vstack(faces)
 
         parts = {}
-        for link_name in self.meshes:
+        for link_name in self.vertices:
             mesh_transform_matrix = self.frame_status[link_name].get_matrix()[0].cpu().numpy()
             part_mesh = self.meshes[link_name].copy().apply_transform(mesh_transform_matrix)
             parts[link_name] = part_mesh
@@ -292,6 +292,16 @@ class HandModel:
         all_faces = np.vstack(faces)
 
         return trimesh.Trimesh(vertices=all_vertices, faces=all_faces)
+
+    def get_trimesh_se3_parts(self, transform, index):
+        """Return per-link trimesh objects positioned by SE3 transforms."""
+        parts = {}
+        for link_name in self.vertices:
+            if link_name not in transform:
+                continue
+            mat = transform[link_name][index].detach().cpu().numpy()
+            parts[link_name] = self.meshes[link_name].copy().apply_transform(mat)
+        return parts
 
 
 def create_hand_model(

@@ -99,7 +99,7 @@ train:
   save_dir: 'graph_exp/diff_v4_leap_variant_v2_vae_obj_vae50'
   project_name: 'trograsp-fm'
   experiment_name: 'diff_v4_leap_variant_v2_vae_obj_vae50'
-  resume_from: 'graph_exp/diff_v4_leap_variant_v2_vae_obj_vae50/ckpt/epoch=99.ckpt'
+  resume_from: 'graph_exp/diff_v4_leap_variant_v2_vae_obj_vae50/ckpt/epoch=239.ckpt'
   pretrained_from: null
   gpus: 8
   gradient_clip_val: 1.0

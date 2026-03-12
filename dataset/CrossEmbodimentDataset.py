@@ -76,7 +76,7 @@ class CrossEmbodimentDataset(Dataset):
 
         # GT metadata (only for GT robots)
         if dataset_path is None:
-            dataset_path = os.path.join(ROOT_DIR, 'data/CMapDataset_filtered/cmap_multidex_full2_dataset.pt')
+            dataset_path = os.path.join(ROOT_DIR, 'data/CMapDataset_filtered/cmap_full_dataset.pt')
         elif not os.path.isabs(dataset_path):
             dataset_path = os.path.join(ROOT_DIR, dataset_path)
         metadata = torch.load(dataset_path)['metadata']

@@ -2,7 +2,7 @@ model_type: 'diff_v4_ce_vae'
 
 dataset:
   robot_names:
-    - 'allegro'
+    - 'xhand'
   debug_object_names: null
   batch_size: 100
   num_workers: 16
@@ -26,6 +26,8 @@ model:
     shadowhand: 17
     leaphand: 17
     xhand: 13
+    robotiq_3finger: 13
+    ezgripper: 5
   inference_config:
     inference_mode: 'unconditioned'
   vae_config:
@@ -58,6 +60,8 @@ model:
     - 'shadowhand'
     - 'leaphand'
     - 'xhand'
+    - 'robotiq_3finger'
+    - 'ezgripper'
   mode: 'test'
   loss_config:
     trans_weight: 1.0
@@ -71,12 +75,15 @@ model:
     no_gt_loss_weight: 1.0
 
 vis:
-  embodiment: 'allegro'
-  ckpt: 'graph_exp/diff_v4_basl_v2_vae_obj_vae50/ckpt/epoch=699.ckpt'
+  embodiment: 'xhand'
+  ckpt: 'graph_exp/diff_v4_baslrex_baslrex_v2_vae_obj_vae50/ckpt/epoch=469.ckpt'
   split_batch_size: 100
   gpu: 0
   port: 8080
-  save_path: "outputs/vis_cache_v4_vae_obj_vae50.pt"
+  save_path: "outputs/diff_v4_baslrex_baslrex_v2_vae_obj_vae50.pt"
+  image_dir: 'graph_exp/diff_v4_baslrex_baslrex_v2_vae_obj_vae50/images/'
+  hand_color: 'light_green'
+  num_images: 10
   ik:
     mode: "baseline"
     force_recompute: true

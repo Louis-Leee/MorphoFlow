@@ -792,13 +792,13 @@ def run_pyroki_ik(vis_data, config):
         print(f"IK report saved to {ik_cfg['report_path']}")
 
 
-def generate_link_colors(link_names):
+def generate_link_colors(link_names, saturation=0.8, value=0.9):
     """Generate distinct HSV-spaced colors for each link."""
     colors = {}
     n = len(link_names)
     for i, name in enumerate(link_names):
         hue = i / n
-        r, g, b = colorsys.hsv_to_rgb(hue, 0.8, 0.9)
+        r, g, b = colorsys.hsv_to_rgb(hue, saturation, value)
         colors[name] = (int(r * 255), int(g * 255), int(b * 255))
     return colors
 
@@ -815,6 +815,11 @@ def launch_viewer(vis_data, config):
     for info in vis_data:
         grasp_offsets.append(total_grasps)
         total_grasps += _get_batch_grasp_count(info)
+
+    # Set initial camera closer to the scene
+    server.initial_camera.position = np.array([0.3, 0.3, 0.3], dtype=np.float32)
+    server.initial_camera.look_at = np.array([0.0, 0.0, 0.05], dtype=np.float32)
+    server.initial_camera.fov = 0.75
 
     # Get sorted denoising steps (noise → clean)
     sample_steps = sorted(vis_data[0]["transform_dict"].keys(), reverse=True)
@@ -861,6 +866,57 @@ def launch_viewer(vis_data, config):
         label="show_ik_links",
         initial_value=False,
     )
+    ik_color_dropdown = server.gui.add_dropdown(
+        label="ik_color",
+        options=["light_green", "light_gray", "light_blue", "light_red", "light_purple", "light_rainbow"],
+        initial_value="light_green",
+    )
+    IK_COLOR_MAP = {
+        "light_green": (144, 238, 144),
+        "light_gray": (200, 200, 200),
+        "light_blue": (173, 216, 230),
+        "light_red": (255, 182, 193),
+        "light_purple": (200, 162, 200),
+    }
+
+    # Per-link visibility state
+    link_vis_folder = server.gui.add_folder("link_visibility")
+    link_vis_checkboxes = {}  # {link_name: checkbox_handle}
+    link_vis_toggle_all = None
+    prev_robot_name = [None]  # mutable for closure
+    prev_rendered_links = set()  # track rendered link names for cleanup
+
+    def _rebuild_link_checkboxes(link_names):
+        """Rebuild per-link visibility checkboxes when robot changes."""
+        nonlocal link_vis_toggle_all
+        # Remove old checkboxes
+        for cb in link_vis_checkboxes.values():
+            cb.remove()
+        link_vis_checkboxes.clear()
+        if link_vis_toggle_all is not None:
+            link_vis_toggle_all.remove()
+            link_vis_toggle_all = None
+        # Add toggle-all
+        with link_vis_folder:
+            link_vis_toggle_all = server.gui.add_checkbox(
+                label="show_all",
+                initial_value=True,
+            )
+            link_vis_toggle_all.on_update(_on_toggle_all)
+            for lname in sorted(link_names):
+                cb = server.gui.add_checkbox(
+                    label=lname,
+                    initial_value=True,
+                )
+                cb.on_update(on_update)
+                link_vis_checkboxes[lname] = cb
+
+    def _on_toggle_all(_=None):
+        """Set all link checkboxes to match toggle_all value."""
+        val = link_vis_toggle_all.value
+        for cb in link_vis_checkboxes.values():
+            cb.value = val
+        on_update()
 
     def on_update(_=None):
         grasp_idx = int(grasp_slider.value)
@@ -899,8 +955,8 @@ def launch_viewer(vis_data, config):
                     "object/mesh",
                     obj_mesh.vertices,
                     obj_mesh.faces,
-                    color=(239, 132, 167),
-                    opacity=0.6,
+                    color=(180, 180, 180),
+                    opacity=1.0,
                 )
             else:
                 server.scene.add_mesh_simple(
@@ -964,25 +1020,63 @@ def launch_viewer(vis_data, config):
                 visible=show_denoised_cb.value,
             )
 
-        # ---- Robot mesh (IK, step 0 only) ----
+        # ---- Rebuild link visibility checkboxes on robot change ----
+        if robot_name != prev_robot_name[0]:
+            # Clean up stale per-link meshes from previous robot
+            for old_lname in prev_rendered_links:
+                server.scene.add_mesh_simple(
+                    f"robot_ik_parts/{old_lname}",
+                    np.zeros((3, 3), dtype=np.float32),
+                    np.zeros((1, 3), dtype=np.int32),
+                    visible=False,
+                )
+            prev_rendered_links.clear()
+            prev_robot_name[0] = robot_name
+            _rebuild_link_checkboxes(list(hand.vertices.keys()))
+
+        # ---- Robot mesh — per-link (IK at step 0, SE3 transform at other steps) ----
         has_ik = info.get("predict_q") is not None
-        if has_ik and step_key == 0 and show_ik_cb.value:
-            predict_q = info["predict_q"][local_idx]
-            robot_trimesh = hand.get_trimesh_q(predict_q)["visual"]
+        current_links = set()
+        if show_ik_cb.value:
+            if has_ik and step_key == 0:
+                # Final step: use IK-solved joint angles (kinematically consistent)
+                predict_q = info["predict_q"][local_idx]
+                ik_result = hand.get_trimesh_q(predict_q)
+                parts = ik_result["parts"]
+            else:
+                # Intermediate steps: position meshes directly via SE3 transforms
+                parts = hand.get_trimesh_se3_parts(transform, local_idx)
+
+            ik_color_val = ik_color_dropdown.value
+            if ik_color_val == "light_rainbow":
+                part_colors = generate_link_colors(list(parts.keys()), saturation=0.5, value=0.94)
+            else:
+                uniform_color = IK_COLOR_MAP.get(ik_color_val, (144, 238, 144))
+                part_colors = {lname: uniform_color for lname in parts}
+
+            for lname, lmesh in parts.items():
+                link_visible = link_vis_checkboxes.get(lname, None)
+                is_visible = link_visible.value if link_visible is not None else True
+                server.scene.add_mesh_simple(
+                    f"robot_ik_parts/{lname}",
+                    lmesh.vertices,
+                    lmesh.faces,
+                    color=part_colors[lname],
+                    opacity=0.8,
+                    visible=is_visible,
+                )
+                current_links.add(lname)
+
+        # Hide links that were rendered before but not in current set
+        for old_lname in prev_rendered_links - current_links:
             server.scene.add_mesh_simple(
-                "robot_ik",
-                robot_trimesh.vertices,
-                robot_trimesh.faces,
-                color=(100, 255, 100),
-                opacity=0.8,
-            )
-        else:
-            server.scene.add_mesh_simple(
-                "robot_ik",
+                f"robot_ik_parts/{old_lname}",
                 np.zeros((3, 3), dtype=np.float32),
                 np.zeros((1, 3), dtype=np.int32),
                 visible=False,
             )
+        prev_rendered_links.clear()
+        prev_rendered_links.update(current_links)
 
     # Register callbacks
     grasp_slider.on_update(on_update)
@@ -991,6 +1085,7 @@ def launch_viewer(vis_data, config):
     show_pc_cb.on_update(on_update)
     show_denoised_cb.on_update(on_update)
     show_ik_cb.on_update(on_update)
+    ik_color_dropdown.on_update(on_update)
 
     # Initial render
     on_update()

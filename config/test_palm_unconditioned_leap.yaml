@@ -6,7 +6,7 @@ dataset:
 
   batch_size: 100  # sample per object
   num_workers: 16
-  object_pc_type: 'random'  # 'fixed', 'random', 'partial'
+  object_pc_type: 'partial'  # 'fixed', 'random', 'partial'
 
 model:
   vqvae_cfg:
@@ -71,8 +71,8 @@ model:
 
 test:
   embodiment: "leaphand"
-  ckpt: "graph_exp/tro_basrelx_full/ckpt/10.pth"
-  save_dir: "graph_exp/tro_basrelx_full/leaphand-unconditioned-test"
+  ckpt: "graph_exp/tro_basrelx/ckpt/30.pth"
+  save_dir: "graph_exp/tro_basrelx/leaphand-unconditioned-test"
   gpu: 2
   split_batch_size: 100    # sample per split
   
