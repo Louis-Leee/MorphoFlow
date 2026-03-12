@@ -1,0 +1,159 @@
+[project]
+name = "tro-grasp"
+version = "0.1.0"
+description = "T(R,O) Grasp: Diffusion-based dexterous grasp generation across multiple robotic hands"
+requires-python = ">=3.10,<3.11"
+dependencies = [
+    # ---------- Core ML ----------
+    "torch==2.6.0",
+    "torchvision==0.21.0",
+    "torchaudio==2.6.0",
+
+    # ---------- 3D / Geometry ----------
+    "pytorch3d>=0.7.8",
+    "pytorch-kinematics>=0.7.5",
+    "trimesh>=4.0",
+    "open3d>=0.19",
+    "yourdfpy>=0.0.58",
+    "pycollada>=0.9",
+    "embreex",
+    "vhacdx",
+    "manifold3d",
+    "shapely>=2.0",
+    "mapbox-earcut",
+    "pyrender>=0.1.45",
+    "pyglet>=2.0",
+
+    # ---------- JAX ecosystem ----------
+    # NOTE: jax uses system CUDA (not pip cuda extras) to avoid
+    # nvidia-cudnn version conflict with torch.
+    "jax>=0.6.2",
+    "jaxlib>=0.6.2",
+    "jax-dataclasses>=1.6",
+    "jaxlie>=1.5",
+    "jaxtyping>=0.3",
+    "typeguard>=4.0",
+    "loguru",
+
+    # ---------- Diffusion ----------
+    "diffusers>=0.36",
+    "einops>=0.8",
+
+    # ---------- Training ----------
+    "pytorch-lightning>=2.0",
+    "wandb>=0.21",
+
+    # ---------- Config ----------
+    "omegaconf>=2.3",
+    "hydra-core>=1.3",
+
+    # ---------- Optimization ----------
+    "cvxpy>=1.7",
+    "cvxpylayers>=0.1",
+
+    # ---------- Visualization ----------
+    "viser>=1.0",
+    "matplotlib>=3.10",
+
+    # ---------- Numerics ----------
+    "scipy>=1.15",
+    "numpy>=1.26,<2",
+    "scikit-image>=0.25",
+
+    # ---------- Utilities ----------
+    "tqdm>=4.60",
+    "colorlog>=6.0",
+    "transforms3d>=0.4",
+    "imageio>=2.37",
+    "Pillow>=11.0",
+    "pydantic>=2.0",
+    "protobuf",
+    "rich",
+
+    # ---------- CUDA extensions ----------
+    "flash-attn>=2.7,<2.8",
+    "torch-cluster>=1.6",
+
+    # ---------- Git dependencies ----------
+    "theseus-ai>=0.2",
+    "bps-torch>=0.1",
+    "chamfer-distance>=0.1",
+    "pyroki",
+    "jaxls",
+
+    # ---------- Local path dependency ----------
+    "chamferdist>=1.0",
+
+    # ---------- TripoSG deps (for third_party/tripo_sg) ----------
+    "transformers>=4.38",
+    "huggingface-hub>=0.36",
+    "diso>=0.1",
+    "peft",
+
+    # ---------- IK / Robot ----------
+    "robot-descriptions>=1.20",
+    "urdf-parser-py>=0.0.4",
+    "pyliblzfse",
+
+    # ---------- FK Steering ----------
+    "iopath>=0.1.10",
+]
+
+# ============================================================
+# uv configuration
+# ============================================================
+[tool.uv]
+# These packages import torch in their setup.py / build scripts,
+# so they must be built with torch already installed in the environment.
+no-build-isolation-package = [
+    "flash-attn",
+    "chamferdist",
+    "bps-torch",
+    "chamfer-distance",
+    "pytorch3d",
+    "theseus-ai",
+    "diso",
+]
+
+# Force source builds for packages whose PyPI wheels have ABI mismatches
+# with torch cu124 builds.
+no-binary-package = [
+    "flash-attn",
+]
+
+# ---------- Extra index URLs ----------
+
+[[tool.uv.index]]
+name = "pytorch-cu124"
+url = "https://download.pytorch.org/whl/cu124"
+explicit = true
+
+[[tool.uv.index]]
+name = "pyg-cu124"
+url = "https://data.pyg.org/whl/torch-2.6.0+cu124.html"
+explicit = true
+format = "flat"
+
+# ---------- Non-PyPI sources ----------
+
+[tool.uv.sources]
+# PyTorch CUDA 12.4 wheels
+torch = { index = "pytorch-cu124" }
+torchvision = { index = "pytorch-cu124" }
+torchaudio = { index = "pytorch-cu124" }
+
+# PyG CUDA wheels
+torch-cluster = { index = "pyg-cu124" }
+
+# pytorch3d: build from source (no PyPI wheel for torch 2.6 + cu124)
+pytorch3d = { git = "https://github.com/facebookresearch/pytorch3d.git", tag = "v0.7.9" }
+
+# Git dependencies
+pyroki = { git = "https://github.com/chungmin99/pyroki.git" }
+jaxls = { git = "https://github.com/brentyi/jaxls.git" }
+theseus-ai = { git = "https://github.com/facebookresearch/theseus.git" }
+bps-torch = { git = "https://github.com/otaheri/bps_torch.git" }
+chamfer-distance = { git = "https://github.com/otaheri/chamfer_distance.git" }
+
+# Local path dependency (CUDA extension in third_party/)
+chamferdist = { path = "third_party/chamferdist" }
